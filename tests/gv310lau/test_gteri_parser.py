@@ -93,6 +93,13 @@ RAW_UART_DUP_ZERO = (
     "08351B00043C,1,26,65,20231030085704,20231030085704,0017$"
 )
 
+RAW_WITH_DIGITAL_FUEL = (
+    "+RESP:GTERI,6E1203,864696060004173,GV310LAU,00000101,,10,1,1,0.0,0,115.8,"
+    "117.129356,31.839248,20230808061540,0460,0001,DF5C,05FE6667,03,15,,4.0,"
+    "0000102:34:33,14549,42,11172,100,210000,0,FUEL123,1,0,06,12,0,001A42A2,"
+    "0617,TMPS,08351B00043C,1,26,65,20231030085704,20231030085704,0017$"
+)
+
 
 def test_parse_gteri_campos_basicos():
     d = parse_gteri(RAW_OK)
@@ -197,3 +204,13 @@ def test_uart_device_type_dup_zero():
     assert isinstance(d.get("uart_device_type"), int)
     remaining_blob = d.get("remaining_blob", "") or ""
     assert "0,0,06" not in remaining_blob
+
+
+def test_digital_fuel_sensor_data_consumed():
+    d = parse_gteri(RAW_WITH_DIGITAL_FUEL)
+
+    assert d.get("uart_device_type") == 0
+    assert d.get("digital_fuel_sensor_data") == "FUEL123"
+    remaining_blob = d.get("remaining_blob", "") or ""
+    assert "FUEL123" not in remaining_blob
+    assert remaining_blob.startswith("1,0,06")
