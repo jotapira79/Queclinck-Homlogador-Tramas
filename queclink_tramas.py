@@ -242,7 +242,7 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
             out["backup_batt_pct"] = val; cursor += 1
     if cursor < len(remaining) and re.fullmatch(r"[0-9A-Fa-f]{6,10}", remaining[cursor] or ""):
         out["device_status"] = (remaining[cursor] or "").upper(); cursor += 1
-    if cursor < len(remaining) and re.fullmatch(r"\\d{1,2}", remaining[cursor] or ""):
+    if cursor < len(remaining) and re.fullmatch(r"\d{1,2}", remaining[cursor] or ""):
         out["uart_device_type"] = safe_int(remaining[cursor]); cursor += 1
     out["remaining_blob"] = ",".join(remaining[cursor:])
     return out
