@@ -8,7 +8,60 @@ except Exception:
     try:
         from src.gteri_parser import parse_gteri  # estilo src/
     except Exception:
-        from queclink_gteri_parser import parse_gteri  # script plano
+        try:
+            import importlib.util
+            from pathlib import Path
+
+            repo_root = Path(__file__).resolve().parents[2]
+            module_path = repo_root / "queclink_tramas.py"
+            spec = importlib.util.spec_from_file_location("queclink_tramas", module_path)
+            if not spec or not spec.loader:  # pragma: no cover - carga alternativa
+                raise ImportError("No se pudo cargar queclink_tramas.py")
+            _module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(_module)
+
+            def _to_iso(ts: str) -> str:
+                if not ts:
+                    return ts
+                from datetime import datetime
+
+                for fmt in ("%Y%m%d%H%M%S",):
+                    try:
+                        return datetime.strptime(ts, fmt).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    except ValueError:
+                        continue
+                return ts
+
+            def _wrapper(raw: str):
+                base = _module.parse_line_to_record(raw)  # type: ignore[attr-defined]
+                if not base:
+                    return {}
+                data = dict(base)
+                data["header"] = data.get("prefix")
+                data["device"] = data.get("model") or data.get("device_name")
+                data["utc"] = _to_iso(data.get("gnss_utc", "")) if data.get("gnss_utc") else data.get("gnss_utc")
+                data["send_time"] = _to_iso(data.get("send_time", "")) if data.get("send_time") else data.get("send_time")
+                data["sats"] = data.get("satellites")
+                dop_candidate = data.get("dop1")
+                if dop_candidate is None:
+                    for key in ("dop2", "dop3"):
+                        val = data.get(key)
+                        if val is not None:
+                            dop_candidate = val
+                            break
+                if dop_candidate is not None:
+                    data["hdop"] = dop_candidate
+                if isinstance(data.get("device_status"), str):
+                    data["device_status"] = data["device_status"].upper()
+                mask_lower = str(data.get("pos_append_mask", "")).lower()
+                if mask_lower in {"00", "0"}:
+                    data.setdefault("gnss_fix", False)
+                    data.setdefault("is_last_fix", True)
+                return data
+
+            parse_gteri = _wrapper
+        except Exception:
+            from queclink_gteri_parser import parse_gteri  # último recurso
 
 
 # Ejemplo real (del PDF) con varios opcionales activos
@@ -99,3 +152,15 @@ def test_valida_hour_meter_formato():
     d = parse_gteri(RAW_OK)
     hm = d.get("hour_meter", "")
     assert re.match(r"^[0-9]{7}:[0-9]{2}:[0-9]{2}$", hm)
+
+
+def test_campos_post_dop_no_se_desplazan():
+    d = parse_gteri(RAW_OK)
+
+    assert d.get("mileage_km") == pytest.approx(14549.0)
+    assert d.get("hour_meter") == "0000102:34:33"
+    assert d.get("analog_in_1") in {"42", 42}
+    assert d.get("analog_in_2") in {"11172", 11172}
+    assert d.get("backup_batt_pct") == 100
+    assert str(d.get("device_status", "")).upper() == "210000"
+    assert d.get("remaining_blob") == "0,1,0,06,12,0,001A42A2,0617,TMPS,08351B00043C,1,26,65,20231030085704"
