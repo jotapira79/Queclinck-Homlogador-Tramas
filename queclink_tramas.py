@@ -367,15 +367,22 @@ CREATE INDEX IF NOT EXISTS idx_imei ON gteri_records(imei);
 CREATE INDEX IF NOT EXISTS idx_gnssutc ON gteri_records(gnss_utc);
 """
 
+def ensure_digital_fuel_sensor_column(conn: sqlite3.Connection) -> None:
+    cur = conn.execute("PRAGMA table_info('gteri_records')")
+    columns = {row[1] for row in cur.fetchall()}
+    if "digital_fuel_sensor_data" not in columns:
+        conn.execute("ALTER TABLE gteri_records ADD COLUMN digital_fuel_sensor_data TEXT")
+
 def insert_records(db_path: str, rows: List[dict]) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(SCHEMA_SQL)
+        ensure_digital_fuel_sensor_column(conn)
         cols = [
             "prefix","is_buff","version","imei","model","eri_mask","ext_power_mv","report_type","number",
             "gnss_acc","speed_kmh","azimuth_deg","altitude_m","lon","lat","gnss_utc","mcc","mnc","lac",
             "cell_id","pos_append_mask","satellites","dop1","dop2","dop3","gnss_trigger_type","gnss_jamming_state",
-            "mileage_km","hour_meter","analog_in_1","analog_in_2","analog_in_3","backup_batt_pct","device_status",
+            "mileage_km","hour_meter","analog_in_1","analog_in_2","analog_in_3","digital_fuel_sensor_data","backup_batt_pct","device_status",
             "uart_device_type","remaining_blob","send_time","count_hex","count_dec","lat_lon_valid"
         ]
         placeholders = ",".join(["?"]*len(cols))
@@ -401,6 +408,7 @@ def process_file(in_path: str, out_db: str, sheet: Optional[str]=None, col: Opti
         conn = sqlite3.connect(out_db)
         try:
             conn.executescript(SCHEMA_SQL)
+            ensure_digital_fuel_sensor_column(conn)
             conn.commit()
         finally:
             conn.close()
