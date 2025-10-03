@@ -79,6 +79,13 @@ RAW_HDOP0 = (
     "0000000:00:10,0,0,0,80,210000,0,0,20250101010102,0001$"
 )
 
+RAW_ANALOG_PLACEHOLDERS = (
+    "+RESP:GTERI,6E1203,864696060004173,GV310LAU,00000100,,10,1,1,0.0,0,115.8,"
+    "117.129356,31.839248,20230808061540,0460,0001,DF5C,05FE6667,03,15,,4.0,"
+    "0000102:34:33,14549,,,,100,220100,0,0,06,12,0,001A42A2,0617,TMPS,"
+    "08351B00043C,1,26,65,20231030085704,20231030085704,0017$"
+)
+
 
 def test_parse_gteri_campos_basicos():
     d = parse_gteri(RAW_OK)
@@ -163,4 +170,15 @@ def test_campos_post_dop_no_se_desplazan():
     assert d.get("analog_in_2") in {"11172", 11172}
     assert d.get("backup_batt_pct") == 100
     assert str(d.get("device_status", "")).upper() == "210000"
-    assert d.get("remaining_blob") == "0,1,0,06,12,0,001A42A2,0617,TMPS,08351B00043C,1,26,65,20231030085704"
+    assert d.get("remaining_blob") == "1,0,06,12,0,001A42A2,0617,TMPS,08351B00043C,1,26,65,20231030085704"
+
+
+def test_placeholders_no_bloquean_campos_posteriores():
+    d = parse_gteri(RAW_ANALOG_PLACEHOLDERS)
+
+    assert d.get("analog_in_1") is None
+    assert d.get("analog_in_2") is None
+    assert d.get("analog_in_3") is None
+    assert d.get("backup_batt_pct") == 100
+    assert d.get("device_status") == "220100"
+    assert d.get("uart_device_type") == 0

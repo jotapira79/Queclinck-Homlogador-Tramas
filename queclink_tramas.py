@@ -222,12 +222,21 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
         out["mileage_km"] = safe_float(remaining[cursor])
         cursor += 1
         mileage_set = True
+    def skip_empty_values() -> None:
+        nonlocal cursor
+        while cursor < len(remaining) and (remaining[cursor] or "") == "":
+            cursor += 1
+
     analog_pattern = r"-?\d+(?:\.\d+)?|F\d{1,3}"
     for i in range(1, 4):
         if cursor >= len(remaining):
             break
         value = remaining[cursor]
-        if (value or "") == "" or not re.fullmatch(analog_pattern, value or ""):
+        if (value or "") == "":
+            out[f"analog_in_{i}"] = None
+            cursor += 1
+            continue
+        if not re.fullmatch(analog_pattern, value or ""):
             break
         if i == 3:
             next_val = remaining[cursor + 1] if cursor + 1 < len(remaining) else None
@@ -236,13 +245,17 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
                 break
         out[f"analog_in_{i}"] = value
         cursor += 1
+
+    skip_empty_values()
     if cursor < len(remaining) and re.fullmatch(r"\d{1,3}", remaining[cursor] or ""):
         val = safe_int(remaining[cursor])
         if val is not None and 0 <= val <= 100:
             out["backup_batt_pct"] = val; cursor += 1
+    skip_empty_values()
     if cursor < len(remaining) and re.fullmatch(r"[0-9A-Fa-f]{6,10}", remaining[cursor] or ""):
         out["device_status"] = (remaining[cursor] or "").upper(); cursor += 1
-    if cursor < len(remaining) and re.fullmatch(r"\\d{1,2}", remaining[cursor] or ""):
+    skip_empty_values()
+    if cursor < len(remaining) and re.fullmatch(r"\d{1,2}", remaining[cursor] or ""):
         out["uart_device_type"] = safe_int(remaining[cursor]); cursor += 1
     out["remaining_blob"] = ",".join(remaining[cursor:])
     return out
