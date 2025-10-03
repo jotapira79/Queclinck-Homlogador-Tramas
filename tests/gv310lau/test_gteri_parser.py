@@ -79,6 +79,18 @@ RAW_HDOP0 = (
     "0000000:00:10,0,0,0,80,210000,0,0,20250101010102,0001$"
 )
 
+RAW_DIGITAL_FUEL = (
+    "+RESP:GTERI,6E1203,864696060004173,GV310LAU,00000001,,10,1,1,12.3,90,200.5,"
+    "-70.123456,-33.456789,20250101010101,0730,0001,ABCD,00112233,00,"
+    "0000000:00:10,0,0,0,80,210000,0,ABCDEF12,20250101010102,0001$"
+)
+
+RAW_DIGITAL_FUEL_ZERO = (
+    "+RESP:GTERI,6E1203,864696060004173,GV310LAU,00000001,,10,1,1,12.3,90,200.5,"
+    "-70.123456,-33.456789,20250101010101,0730,0001,ABCD,00112233,00,"
+    "0000000:00:10,0,0,0,80,210000,0,0,20250101010102,0001$"
+)
+
 
 def test_parse_gteri_campos_basicos():
     d = parse_gteri(RAW_OK)
@@ -163,4 +175,18 @@ def test_campos_post_dop_no_se_desplazan():
     assert d.get("analog_in_2") in {"11172", 11172}
     assert d.get("backup_batt_pct") == 100
     assert str(d.get("device_status", "")).upper() == "210000"
-    assert d.get("remaining_blob") == "0,1,0,06,12,0,001A42A2,0617,TMPS,08351B00043C,1,26,65,20231030085704"
+    assert d.get("remaining_blob") == "1,0,06,12,0,001A42A2,0617,TMPS,08351B00043C,1,26,65,20231030085704"
+
+
+def test_digital_fuel_sensor_data_extraido_y_normalizado():
+    d = parse_gteri(RAW_DIGITAL_FUEL)
+
+    assert d.get("uart_device_type") == 0
+    assert d.get("digital_fuel_sensor_data") == "ABCDEF12"
+    assert d.get("remaining_blob") in ("", None)
+    assert "ABCDEF12" not in (d.get("remaining_blob") or "")
+
+    d_zero = parse_gteri(RAW_DIGITAL_FUEL_ZERO)
+    assert d_zero.get("uart_device_type") == 0
+    assert d_zero.get("digital_fuel_sensor_data") is None
+    assert d_zero.get("remaining_blob") in ("", None)

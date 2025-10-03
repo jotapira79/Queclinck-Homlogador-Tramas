@@ -150,15 +150,19 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
             except ValueError:
                 return None
 
-    mask_value = to_mask_value(fields[start_idx - 1] if start_idx - 1 < len(fields) else None)
+    pam_value = to_mask_value(fields[start_idx - 1] if start_idx - 1 < len(fields) else None)
+    eri_mask_value = to_mask_value(fields[4] if len(fields) > 4 else None)
 
-    def mask_has(bit: int) -> bool:
-        return mask_value is not None and (mask_value & bit) != 0
+    def pam_has(bit: int) -> bool:
+        return pam_value is not None and (pam_value & bit) != 0
+
+    def eri_has(bit: int) -> bool:
+        return eri_mask_value is not None and (eri_mask_value & bit) != 0
 
     cursor = 0
     if cursor < len(remaining):
         raw_sat = remaining[cursor]
-        if mask_has(0x01):
+        if pam_has(0x01):
             out["satellites"] = safe_int(raw_sat) if (raw_sat or "") != "" else None
             cursor += 1
         elif (raw_sat or "") != "" and re.fullmatch(r"\d{1,2}", raw_sat or ""):
@@ -171,7 +175,7 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
         if cursor >= len(remaining):
             break
         value = remaining[cursor]
-        expected = mask_has(0x02 << idx)
+        expected = pam_has(0x02 << idx)
         if (value or "") == "":
             if expected:
                 dop_values.append(None)
@@ -242,8 +246,17 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
             out["backup_batt_pct"] = val; cursor += 1
     if cursor < len(remaining) and re.fullmatch(r"[0-9A-Fa-f]{6,10}", remaining[cursor] or ""):
         out["device_status"] = (remaining[cursor] or "").upper(); cursor += 1
-    if cursor < len(remaining) and re.fullmatch(r"\\d{1,2}", remaining[cursor] or ""):
-        out["uart_device_type"] = safe_int(remaining[cursor]); cursor += 1
+    if cursor < len(remaining) and re.fullmatch(r"\d{1,2}", remaining[cursor] or ""):
+        out["uart_device_type"] = safe_int(remaining[cursor])
+        cursor += 1
+    if eri_has(0x01):
+        if cursor < len(remaining):
+            raw_fuel = remaining[cursor]
+            cursor += 1
+            cleaned = (raw_fuel or "").strip()
+            out["digital_fuel_sensor_data"] = None if cleaned in {"", "0"} else raw_fuel
+        else:
+            out["digital_fuel_sensor_data"] = None
     out["remaining_blob"] = ",".join(remaining[cursor:])
     return out
 
@@ -339,6 +352,7 @@ CREATE TABLE IF NOT EXISTS gteri_records (
     backup_batt_pct INTEGER,
     device_status TEXT,
     uart_device_type INTEGER,
+    digital_fuel_sensor_data TEXT,
     remaining_blob TEXT,
     send_time TEXT,
     count_hex TEXT,
@@ -359,7 +373,7 @@ def insert_records(db_path: str, rows: List[dict]) -> None:
             "gnss_acc","speed_kmh","azimuth_deg","altitude_m","lon","lat","gnss_utc","mcc","mnc","lac",
             "cell_id","pos_append_mask","satellites","dop1","dop2","dop3","gnss_trigger_type","gnss_jamming_state",
             "mileage_km","hour_meter","analog_in_1","analog_in_2","analog_in_3","backup_batt_pct","device_status",
-            "uart_device_type","remaining_blob","send_time","count_hex","count_dec","lat_lon_valid"
+            "uart_device_type","digital_fuel_sensor_data","remaining_blob","send_time","count_hex","count_dec","lat_lon_valid"
         ]
         placeholders = ",".join(["?"]*len(cols))
         sql = f"INSERT INTO gteri_records({','.join(cols)}) VALUES({placeholders})"
