@@ -137,43 +137,106 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
     remaining = fields[start_idx:-2] if len(fields) >= (start_idx + 2) else fields[start_idx:]
     out: Dict[str, Any] = {}
     def looks_like_hourmeter(s: str) -> bool:
-        return bool(re.fullmatch(r"\\d{1,7}:\\d{2}:\\d{2}", s or ""))
+        return bool(re.fullmatch(r"\d{1,7}:\d{2}:\d{2}", s or ""))
+
+    def to_mask_value(val: Optional[str]) -> Optional[int]:
+        if not val:
+            return None
+        try:
+            return int(val, 16)
+        except ValueError:
+            try:
+                return int(val)
+            except ValueError:
+                return None
+
+    mask_value = to_mask_value(fields[start_idx - 1] if start_idx - 1 < len(fields) else None)
+
+    def mask_has(bit: int) -> bool:
+        return mask_value is not None and (mask_value & bit) != 0
+
     cursor = 0
-    if cursor < len(remaining) and (remaining[cursor] or "") != "":
-        maybe_sat = remaining[cursor]
-        if re.fullmatch(r"\\d{1,2}", maybe_sat or ""):
-            out["satellites"] = safe_int(maybe_sat)
+    if cursor < len(remaining):
+        raw_sat = remaining[cursor]
+        if mask_has(0x01):
+            out["satellites"] = safe_int(raw_sat) if (raw_sat or "") != "" else None
             cursor += 1
-    dop_list = []
-    dop_seen = 0
-    for _ in range(3):
-        if cursor < len(remaining):
-            v = remaining[cursor]
-            if re.fullmatch(r"\\d{1,2}(\\.\\d{1,2})?", v or ""):
-                dop_list.append(safe_float(v))
-                cursor += 1
-                dop_seen += 1
-            else:
-                break
-    if dop_seen > 0:
-        out["dop1"] = dop_list[0] if len(dop_list) > 0 else None
-        out["dop2"] = dop_list[1] if len(dop_list) > 1 else None
-        out["dop3"] = dop_list[2] if len(dop_list) > 2 else None
-    else:
-        if cursor < len(remaining) and re.fullmatch(r"\\d", remaining[cursor] or ""):
-            out["gnss_trigger_type"] = safe_int(remaining[cursor]); cursor += 1
-        if cursor < len(remaining) and re.fullmatch(r"\\d", remaining[cursor] or ""):
-            out["gnss_jamming_state"] = safe_int(remaining[cursor]); cursor += 1
-    if cursor < len(remaining) and re.fullmatch(r"\\d+(\\.\\d)?", remaining[cursor] or ""):
-        out["mileage_km"] = safe_float(remaining[cursor]); cursor += 1
-    if cursor < len(remaining) and looks_like_hourmeter(remaining[cursor] or ""):
-        out["hour_meter"] = remaining[cursor]; cursor += 1
-    for i in range(1, 4):
-        if cursor < len(remaining) and (remaining[cursor] or "") != "" and re.fullmatch(r"-?\\d+(\\.\\d+)?|F\\d{1,3}", remaining[cursor] or ""):
-            out[f"analog_in_{i}"] = remaining[cursor]; cursor += 1
-        else:
+        elif (raw_sat or "") != "" and re.fullmatch(r"\d{1,2}", raw_sat or ""):
+            out["satellites"] = safe_int(raw_sat)
+            cursor += 1
+
+    dop_values: List[Optional[float]] = []
+    dop_pattern = r"\d{1,2}(?:\.\d{1,2})?"
+    for idx in range(3):
+        if cursor >= len(remaining):
             break
-    if cursor < len(remaining) and re.fullmatch(r"\\d{1,3}", remaining[cursor] or ""):
+        value = remaining[cursor]
+        expected = mask_has(0x02 << idx)
+        if (value or "") == "":
+            if expected:
+                dop_values.append(None)
+                cursor += 1
+                continue
+            break
+        if re.fullmatch(dop_pattern, value or ""):
+            dop_values.append(safe_float(value))
+            cursor += 1
+            continue
+        if expected:
+            dop_values.append(None)
+            cursor += 1
+            continue
+        break
+
+    if dop_values:
+        if len(dop_values) > 0:
+            out["dop1"] = dop_values[0]
+        if len(dop_values) > 1:
+            out["dop2"] = dop_values[1]
+        if len(dop_values) > 2:
+            out["dop3"] = dop_values[2]
+    else:
+        if cursor < len(remaining) and re.fullmatch(r"\d", remaining[cursor] or ""):
+            out["gnss_trigger_type"] = safe_int(remaining[cursor])
+            cursor += 1
+        if cursor < len(remaining) and re.fullmatch(r"\d", remaining[cursor] or ""):
+            out["gnss_jamming_state"] = safe_int(remaining[cursor])
+            cursor += 1
+
+    mileage_set = False
+    hour_set = False
+
+    if cursor < len(remaining) and looks_like_hourmeter(remaining[cursor] or ""):
+        out["hour_meter"] = remaining[cursor]
+        cursor += 1
+        hour_set = True
+    if cursor < len(remaining) and re.fullmatch(r"-?\d+(?:\.\d+)?", remaining[cursor] or ""):
+        out["mileage_km"] = safe_float(remaining[cursor])
+        cursor += 1
+        mileage_set = True
+    if not hour_set and cursor < len(remaining) and looks_like_hourmeter(remaining[cursor] or ""):
+        out["hour_meter"] = remaining[cursor]
+        cursor += 1
+        hour_set = True
+    if not mileage_set and cursor < len(remaining) and re.fullmatch(r"-?\d+(?:\.\d+)?", remaining[cursor] or ""):
+        out["mileage_km"] = safe_float(remaining[cursor])
+        cursor += 1
+        mileage_set = True
+    analog_pattern = r"-?\d+(?:\.\d+)?|F\d{1,3}"
+    for i in range(1, 4):
+        if cursor >= len(remaining):
+            break
+        value = remaining[cursor]
+        if (value or "") == "" or not re.fullmatch(analog_pattern, value or ""):
+            break
+        if i == 3:
+            next_val = remaining[cursor + 1] if cursor + 1 < len(remaining) else None
+            next_next = remaining[cursor + 2] if cursor + 2 < len(remaining) else None
+            if re.fullmatch(r"\d{1,3}", value or "") and next_val and re.fullmatch(r"[0-9A-Fa-f]{6,10}", next_val or "") and (next_next is None or re.fullmatch(r"\d{1,2}", next_next or "")):
+                break
+        out[f"analog_in_{i}"] = value
+        cursor += 1
+    if cursor < len(remaining) and re.fullmatch(r"\d{1,3}", remaining[cursor] or ""):
         val = safe_int(remaining[cursor])
         if val is not None and 0 <= val <= 100:
             out["backup_batt_pct"] = val; cursor += 1
