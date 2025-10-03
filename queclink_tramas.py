@@ -256,7 +256,11 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
         out["device_status"] = (remaining[cursor] or "").upper(); cursor += 1
     skip_empty_values()
     if cursor < len(remaining) and re.fullmatch(r"\d{1,2}", remaining[cursor] or ""):
-        out["uart_device_type"] = safe_int(remaining[cursor]); cursor += 1
+        parsed_uart = safe_int(remaining[cursor])
+        if parsed_uart is not None:
+            out["uart_device_type"] = parsed_uart
+        cursor += 1
+    skip_empty_values()
     out["remaining_blob"] = ",".join(remaining[cursor:])
     return out
 
