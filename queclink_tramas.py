@@ -25,6 +25,17 @@ except Exception:
 
 GTERI_PREFIXES = ("+RESP:GTERI", "+BUFF:GTERI")
 
+
+def extract_gteri_payload(line: str) -> Optional[str]:
+    if not line:
+        return None
+    matches = [line.find(prefix) for prefix in GTERI_PREFIXES]
+    matches = [idx for idx in matches if idx != -1]
+    if not matches:
+        return None
+    start = min(matches)
+    return line[start:]
+
 def split_fields(payload: str) -> List[str]:
     payload = payload.strip()
     if payload.endswith("$"):
@@ -37,7 +48,7 @@ def detect_model(fields: List[str]) -> Optional[str]:
     return None
 
 def is_gteri(line: str) -> bool:
-    return any(line.lstrip().startswith(p) for p in GTERI_PREFIXES)
+    return extract_gteri_payload(line) is not None
 
 def safe_float(x: Any) -> Optional[float]:
     try:
@@ -174,9 +185,10 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
     return out
 
 def parse_line_to_record(line: str) -> Optional[Dict[str, Any]]:
-    if not is_gteri(line):
+    payload = extract_gteri_payload(line)
+    if payload is None:
         return None
-    fields = split_fields(line)
+    fields = split_fields(payload)
     if len(fields) < 22:
         return None
     ce, nxt = parse_common_prefix(fields)
