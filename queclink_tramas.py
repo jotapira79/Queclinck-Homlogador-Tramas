@@ -151,6 +151,7 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
                 return None
 
     mask_value = to_mask_value(fields[start_idx - 1] if start_idx - 1 < len(fields) else None)
+    eri_mask_value = to_mask_value(fields[4] if len(fields) > 4 else None)
 
     def mask_has(bit: int) -> bool:
         return mask_value is not None and (mask_value & bit) != 0
@@ -259,6 +260,15 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
         parsed_uart = safe_int(remaining[cursor])
         if parsed_uart is not None:
             out["uart_device_type"] = parsed_uart
+        cursor += 1
+    skip_empty_values()
+    if (
+        eri_mask_value is not None
+        and (eri_mask_value & 0x01) != 0
+        and "uart_device_type" in out
+        and cursor < len(remaining)
+    ):
+        out["digital_fuel_sensor_data"] = remaining[cursor]
         cursor += 1
     skip_empty_values()
     out["remaining_blob"] = ",".join(remaining[cursor:])
