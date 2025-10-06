@@ -74,7 +74,7 @@ jobs:
           render_map(points, str(artifacts / "map.html"), str(artifacts / "map.geojson"))
           PY
       - name: Publicar artefactos
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: viz-map
           path: artifacts
