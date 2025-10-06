@@ -12,6 +12,7 @@ Uso rápido:
 """
 import argparse
 import csv
+import json
 import os
 import re
 import sqlite3
@@ -229,37 +230,119 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
             cursor += 1
 
     analog_pattern = r"-?\d+(?:\.\d+)?|F\d{1,3}"
+
+    def add_warning(code: str) -> None:
+        warnings = out.setdefault("validation_warnings", [])
+        if code not in warnings:
+            warnings.append(code)
+
+    def parse_analog_value(raw_value: Optional[str], index: int) -> None:
+        key = f"analog_in_{index}"
+        raw_key = f"{key}_raw"
+        mv_key = f"{key}_mv"
+        pct_key = f"{key}_pct"
+        out[key] = None
+        out[raw_key] = None
+        out[mv_key] = None
+        out[pct_key] = None
+        if raw_value is None or (raw_value or "") == "":
+            return
+        value = (raw_value or "").strip()
+        out[raw_key] = value
+        if not re.fullmatch(analog_pattern, value or ""):
+            add_warning(f"{key}_invalid")
+            return
+        max_mv = 30000 if index == 3 else 16000
+        mv_value: Optional[int] = None
+        pct_value: Optional[float] = None
+        if value.upper().startswith("F"):
+            pct_raw = safe_int(value[1:]) if len(value) > 1 else None
+            if pct_raw is None:
+                add_warning(f"{key}_invalid")
+                return
+            pct_clamped = max(0, min(100, pct_raw))
+            if pct_clamped != pct_raw:
+                add_warning(f"{key}_pct_clamped")
+            pct_value = float(pct_clamped)
+            mv_value = int(round(max_mv * (pct_value / 100.0)))
+        else:
+            numeric = safe_float(value)
+            if numeric is None:
+                add_warning(f"{key}_invalid")
+                return
+            mv_candidate = int(round(numeric))
+            mv_clamped = max(0, min(max_mv, mv_candidate))
+            if mv_clamped != mv_candidate:
+                add_warning(f"{key}_mv_clamped")
+            mv_value = mv_clamped
+            pct_value = round((mv_value / max_mv) * 100.0, 2) if max_mv > 0 else None
+        out[key] = mv_value
+        out[mv_key] = mv_value
+        out[pct_key] = pct_value
+
     for i in range(1, 4):
         if cursor >= len(remaining):
             break
         value = remaining[cursor]
-        if (value or "") == "":
-            out[f"analog_in_{i}"] = None
-            cursor += 1
-            continue
-        if not re.fullmatch(analog_pattern, value or ""):
-            break
         if i == 3:
             next_val = remaining[cursor + 1] if cursor + 1 < len(remaining) else None
             next_next = remaining[cursor + 2] if cursor + 2 < len(remaining) else None
-            if re.fullmatch(r"\d{1,3}", value or "") and next_val and re.fullmatch(r"[0-9A-Fa-f]{6,10}", next_val or "") and (next_next is None or re.fullmatch(r"\d{1,2}", next_next or "")):
+            if (
+                re.fullmatch(r"\d{1,3}", (value or ""))
+                and next_val
+                and re.fullmatch(r"[0-9A-Fa-f]{6,10}", next_val or "")
+                and (next_next is None or re.fullmatch(r"\d{1,2}", next_next or ""))
+            ):
+                parse_analog_value(None, i)
                 break
-        out[f"analog_in_{i}"] = value
+        parse_analog_value(value, i)
         cursor += 1
 
     skip_empty_values()
-    if cursor < len(remaining) and re.fullmatch(r"\d{1,3}", remaining[cursor] or ""):
-        val = safe_int(remaining[cursor])
-        if val is not None and 0 <= val <= 100:
-            out["backup_batt_pct"] = val; cursor += 1
+    if cursor < len(remaining) and re.fullmatch(r"-?\d+(?:\.\d+)?", remaining[cursor] or ""):
+        raw_val = safe_float(remaining[cursor])
+        if raw_val is not None:
+            raw_int = int(round(raw_val))
+            clamped = max(0, min(100, raw_int))
+            out["backup_batt_pct_raw"] = raw_val
+            if clamped != raw_int:
+                add_warning("backup_batt_pct_clamped")
+            out["backup_batt_pct"] = clamped
+            cursor += 1
     skip_empty_values()
-    if cursor < len(remaining) and re.fullmatch(r"[0-9A-Fa-f]{6,10}", remaining[cursor] or ""):
-        out["device_status"] = (remaining[cursor] or "").upper(); cursor += 1
+    if cursor < len(remaining):
+        candidate = remaining[cursor] or ""
+        upper_candidate = candidate.upper()
+        device_status_parsed = False
+        if re.fullmatch(r"[0-9A-F]{6}|[0-9A-F]{10}", upper_candidate):
+            device_status_parsed = True
+            bit_len = 24 if len(upper_candidate) == 6 else 40
+            out["device_status"] = upper_candidate
+            out["device_status_raw"] = candidate
+            out["device_status_len_bits"] = bit_len
+        elif re.fullmatch(r"[0-9A-F]{10}-[0-9A-F]{10}", upper_candidate):
+            device_status_parsed = True
+            hi, lo = upper_candidate.split("-")
+            out["device_status"] = upper_candidate
+            out["device_status_raw"] = candidate
+            out["device_status_len_bits"] = 80
+            out["device_status_hi"] = hi
+            out["device_status_lo"] = lo
+        if device_status_parsed:
+            cursor += 1
+        elif candidate:
+            out["device_status_raw"] = candidate
+            add_warning("device_status_invalid")
+            cursor += 1
     skip_empty_values()
     if cursor < len(remaining) and re.fullmatch(r"\d{1,2}", remaining[cursor] or ""):
         parsed_uart = safe_int(remaining[cursor])
         if parsed_uart is not None:
             out["uart_device_type"] = parsed_uart
+            label_map = {0: "unknown", 1: "type_1", 7: "type_7"}
+            out["uart_device_type_label"] = label_map.get(parsed_uart, "invalid")
+            if parsed_uart not in label_map:
+                add_warning("uart_device_type_invalid")
         cursor += 1
     skip_empty_values()
     if (
@@ -268,8 +351,41 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
         and "uart_device_type" in out
         and cursor < len(remaining)
     ):
-        out["digital_fuel_sensor_data"] = remaining[cursor]
-        cursor += 1
+        dfs_items: List[str] = []
+        dfs_truncated = False
+
+        def should_stop(token: Optional[str], has_items: bool) -> bool:
+            if token is None:
+                return True
+            token_str = (token or "").strip()
+            if token_str == "":
+                return True
+            upper = token_str.upper()
+            if upper in {"TMPS", "RF433", "RF433B", "BLE", "CAN", "1WIRE"}:
+                return True
+            if has_items and token_str.isdigit() and len(token_str) <= 2:
+                return True
+            if has_items and re.fullmatch(r"\d{4,}", token_str):
+                return True
+            if has_items and re.fullmatch(r"[0-9A-F]{8,}", upper):
+                return True
+            return False
+
+        while cursor < len(remaining):
+            token = remaining[cursor]
+            if should_stop(token, bool(dfs_items)):
+                break
+            if len(dfs_items) < 20:
+                dfs_items.append(token or "")
+            else:
+                dfs_truncated = True
+            cursor += 1
+        if dfs_items:
+            out["digital_fuel_sensor_data"] = dfs_items[0] if len(dfs_items) == 1 else "|".join(dfs_items)
+            out["dfs_raw_list"] = json.dumps(dfs_items, ensure_ascii=False)
+            out["dfs_count"] = len(dfs_items)
+        if dfs_truncated:
+            add_warning("digital_fuel_sensor_data_truncated")
     skip_empty_values()
     out["remaining_blob"] = ",".join(remaining[cursor:])
     return out
@@ -292,6 +408,20 @@ def parse_line_to_record(line: str) -> Optional[Dict[str, Any]]:
     base["count_dec"] = safe_int(base.get("count_hex"), 16) if base.get("count_hex") else None
     base["lat_lon_valid"] = 1 if (base.get("lat") is not None and base.get("lon") is not None) else 0
     base["model"] = ce.device_name.upper()
+    warnings = base.get("validation_warnings")
+    if warnings:
+        if not isinstance(warnings, list):
+            warnings = [warnings]
+        base["validation_warnings"] = warnings
+        base["validation_warning"] = 1
+        base["validation_warnings_json"] = json.dumps(warnings, ensure_ascii=False)
+    else:
+        base["validation_warning"] = 0
+        base["validation_warnings_json"] = None
+        if warnings is None:
+            base.pop("validation_warnings", None)
+        else:
+            base["validation_warnings"] = []
     return base
 
 def iter_messages_from_txt(path: str):
@@ -363,37 +493,88 @@ CREATE TABLE IF NOT EXISTS gteri_records (
     analog_in_1 TEXT,
     analog_in_2 TEXT,
     analog_in_3 TEXT,
+    analog_in_1_raw TEXT,
+    analog_in_1_mv INTEGER,
+    analog_in_1_pct REAL,
+    analog_in_2_raw TEXT,
+    analog_in_2_mv INTEGER,
+    analog_in_2_pct REAL,
+    analog_in_3_raw TEXT,
+    analog_in_3_mv INTEGER,
+    analog_in_3_pct REAL,
+    digital_fuel_sensor_data TEXT,
+    dfs_raw_list TEXT,
+    dfs_count INTEGER,
     backup_batt_pct INTEGER,
+    backup_batt_pct_raw REAL,
     device_status TEXT,
+    device_status_raw TEXT,
+    device_status_len_bits INTEGER,
+    device_status_hi TEXT,
+    device_status_lo TEXT,
     uart_device_type INTEGER,
+    uart_device_type_label TEXT,
     remaining_blob TEXT,
     send_time TEXT,
     count_hex TEXT,
     count_dec INTEGER,
-    lat_lon_valid INTEGER
+    lat_lon_valid INTEGER,
+    validation_warning INTEGER,
+    validation_warnings_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_model ON gteri_records(model);
 CREATE INDEX IF NOT EXISTS idx_imei ON gteri_records(imei);
 CREATE INDEX IF NOT EXISTS idx_gnssutc ON gteri_records(gnss_utc);
 """
 
-def ensure_digital_fuel_sensor_column(conn: sqlite3.Connection) -> None:
+def ensure_additional_columns(conn: sqlite3.Connection) -> None:
     cur = conn.execute("PRAGMA table_info('gteri_records')")
     columns = {row[1] for row in cur.fetchall()}
-    if "digital_fuel_sensor_data" not in columns:
-        conn.execute("ALTER TABLE gteri_records ADD COLUMN digital_fuel_sensor_data TEXT")
+    required_columns = {
+        "digital_fuel_sensor_data": "TEXT",
+        "dfs_raw_list": "TEXT",
+        "dfs_count": "INTEGER",
+        "analog_in_1_raw": "TEXT",
+        "analog_in_1_mv": "INTEGER",
+        "analog_in_1_pct": "REAL",
+        "analog_in_2_raw": "TEXT",
+        "analog_in_2_mv": "INTEGER",
+        "analog_in_2_pct": "REAL",
+        "analog_in_3_raw": "TEXT",
+        "analog_in_3_mv": "INTEGER",
+        "analog_in_3_pct": "REAL",
+        "backup_batt_pct_raw": "REAL",
+        "device_status_raw": "TEXT",
+        "device_status_len_bits": "INTEGER",
+        "device_status_hi": "TEXT",
+        "device_status_lo": "TEXT",
+        "uart_device_type_label": "TEXT",
+        "validation_warning": "INTEGER",
+        "validation_warnings_json": "TEXT",
+    }
+    for col, col_type in required_columns.items():
+        if col not in columns:
+            conn.execute(f"ALTER TABLE gteri_records ADD COLUMN {col} {col_type}")
 
 def insert_records(db_path: str, rows: List[dict]) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(SCHEMA_SQL)
-        ensure_digital_fuel_sensor_column(conn)
+        ensure_additional_columns(conn)
         cols = [
             "prefix","is_buff","version","imei","model","eri_mask","ext_power_mv","report_type","number",
             "gnss_acc","speed_kmh","azimuth_deg","altitude_m","lon","lat","gnss_utc","mcc","mnc","lac",
             "cell_id","pos_append_mask","satellites","dop1","dop2","dop3","gnss_trigger_type","gnss_jamming_state",
-            "mileage_km","hour_meter","analog_in_1","analog_in_2","analog_in_3","digital_fuel_sensor_data","backup_batt_pct","device_status",
-            "uart_device_type","remaining_blob","send_time","count_hex","count_dec","lat_lon_valid"
+            "mileage_km","hour_meter","analog_in_1","analog_in_2","analog_in_3",
+            "analog_in_1_raw","analog_in_1_mv","analog_in_1_pct",
+            "analog_in_2_raw","analog_in_2_mv","analog_in_2_pct",
+            "analog_in_3_raw","analog_in_3_mv","analog_in_3_pct",
+            "digital_fuel_sensor_data","dfs_raw_list","dfs_count",
+            "backup_batt_pct","backup_batt_pct_raw",
+            "device_status","device_status_raw","device_status_len_bits","device_status_hi","device_status_lo",
+            "uart_device_type","uart_device_type_label",
+            "remaining_blob","send_time","count_hex","count_dec","lat_lon_valid",
+            "validation_warning","validation_warnings_json"
         ]
         placeholders = ",".join(["?"]*len(cols))
         sql = f"INSERT INTO gteri_records({','.join(cols)}) VALUES({placeholders})"
@@ -418,7 +599,7 @@ def process_file(in_path: str, out_db: str, sheet: Optional[str]=None, col: Opti
         conn = sqlite3.connect(out_db)
         try:
             conn.executescript(SCHEMA_SQL)
-            ensure_digital_fuel_sensor_column(conn)
+            ensure_additional_columns(conn)
             conn.commit()
         finally:
             conn.close()

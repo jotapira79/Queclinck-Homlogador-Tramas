@@ -96,7 +96,21 @@ RAW_UART_DUP_ZERO = (
 RAW_WITH_DIGITAL_FUEL = (
     "+RESP:GTERI,6E1203,864696060004173,GV310LAU,00000101,,10,1,1,0.0,0,115.8,"
     "117.129356,31.839248,20230808061540,0460,0001,DF5C,05FE6667,03,15,,4.0,"
-    "0000102:34:33,14549,42,11172,100,210000,0,FUEL123,1,0,06,12,0,001A42A2,"
+    "0000102:34:33,14549,42,11172,100,210000,0,FUEL123,LEVEL80,1,0,06,12,0,001A42A2,"
+    "0617,TMPS,08351B00043C,1,26,65,20231030085704,20231030085704,0017$"
+)
+
+RAW_ANALOG_NORMALIZED = (
+    "+RESP:GTERI,6E1203,864696060004173,GV310LAU,00000100,,10,1,1,0.0,0,115.8,"
+    "117.129356,31.839248,20230808061540,0460,0001,DF5C,05FE6667,03,15,,4.0,"
+    "0000102:34:33,14549,F50,8000,F75,100,210000,0,1,0,06,12,0,001A42A2,0617,TMPS,"
+    "08351B00043C,1,26,65,20231030085704,20231030085704,0017$"
+)
+
+RAW_WITH_WARNINGS = (
+    "+RESP:GTERI,6E1203,864696060004173,GV310LAU,00000101,,10,1,1,0.0,0,115.8,"
+    "117.129356,31.839248,20230808061540,0460,0001,DF5C,05FE6667,03,15,,4.0,"
+    "0000102:34:33,14549,20000,-10,35000,130,0000000000-0F0FFFFFFF,3,FUELX,DATA,06,12,0,001A42A2,"
     "0617,TMPS,08351B00043C,1,26,65,20231030085704,20231030085704,0017$"
 )
 
@@ -180,11 +194,27 @@ def test_campos_post_dop_no_se_desplazan():
 
     assert d.get("mileage_km") == pytest.approx(14549.0)
     assert d.get("hour_meter") == "0000102:34:33"
-    assert d.get("analog_in_1") in {"42", 42}
-    assert d.get("analog_in_2") in {"11172", 11172}
+    assert d.get("analog_in_1") == 42
+    assert d.get("analog_in_1_mv") == 42
+    assert d.get("analog_in_1_pct") == pytest.approx(0.26, rel=1e-2, abs=1e-2)
+    assert d.get("analog_in_1_raw") == "42"
+    assert d.get("analog_in_2") == 11172
+    assert d.get("analog_in_2_mv") == 11172
+    assert d.get("analog_in_2_pct") == pytest.approx(69.83, rel=1e-3, abs=1e-2)
+    assert d.get("analog_in_2_raw") == "11172"
+    assert d.get("analog_in_3") is None
+    assert d.get("analog_in_3_mv") is None
+    assert d.get("analog_in_3_pct") is None
+    assert d.get("analog_in_3_raw") in (None, "")
     assert d.get("backup_batt_pct") == 100
+    assert d.get("backup_batt_pct_raw") == pytest.approx(100.0)
     assert str(d.get("device_status", "")).upper() == "210000"
+    assert d.get("device_status_len_bits") == 24
+    assert d.get("device_status_raw") == "210000"
     assert d.get("remaining_blob") == "1,0,06,12,0,001A42A2,0617,TMPS,08351B00043C,1,26,65,20231030085704"
+    assert d.get("uart_device_type_label") == "unknown"
+    assert d.get("validation_warning") in (0, False)
+    assert d.get("validation_warnings_json") in (None, "[]")
 
 
 def test_placeholders_no_bloquean_campos_posteriores():
@@ -193,15 +223,20 @@ def test_placeholders_no_bloquean_campos_posteriores():
     assert d.get("analog_in_1") is None
     assert d.get("analog_in_2") is None
     assert d.get("analog_in_3") is None
+    assert d.get("analog_in_1_raw") in (None, "")
+    assert d.get("analog_in_2_raw") in (None, "")
+    assert d.get("analog_in_3_raw") in (None, "")
     assert d.get("backup_batt_pct") == 100
     assert d.get("device_status") == "220100"
     assert d.get("uart_device_type") == 0
+    assert d.get("uart_device_type_label") == "unknown"
 
 
 def test_uart_device_type_dup_zero():
     d = parse_gteri(RAW_UART_DUP_ZERO)
 
     assert isinstance(d.get("uart_device_type"), int)
+    assert d.get("uart_device_type_label") == "unknown"
     remaining_blob = d.get("remaining_blob", "") or ""
     assert "0,0,06" not in remaining_blob
 
@@ -210,7 +245,51 @@ def test_digital_fuel_sensor_data_consumed():
     d = parse_gteri(RAW_WITH_DIGITAL_FUEL)
 
     assert d.get("uart_device_type") == 0
-    assert d.get("digital_fuel_sensor_data") == "FUEL123"
+    assert d.get("digital_fuel_sensor_data") == "FUEL123|LEVEL80"
+    assert d.get("dfs_raw_list") == '["FUEL123", "LEVEL80"]'
+    assert d.get("dfs_count") == 2
     remaining_blob = d.get("remaining_blob", "") or ""
     assert "FUEL123" not in remaining_blob
     assert remaining_blob.startswith("1,0,06")
+
+
+def test_analog_f_normalization():
+    d = parse_gteri(RAW_ANALOG_NORMALIZED)
+
+    assert d.get("analog_in_1") == 8000
+    assert d.get("analog_in_1_mv") == 8000
+    assert d.get("analog_in_1_pct") == 50.0
+    assert d.get("analog_in_2") == 8000
+    assert d.get("analog_in_2_pct") == 50.0
+    assert d.get("analog_in_3") == 22500
+    assert d.get("analog_in_3_pct") == 75.0
+    assert d.get("validation_warning") in (0, False)
+    assert d.get("validation_warnings_json") in (None, "[]")
+
+
+def test_warn_when_values_outside_range():
+    d = parse_gteri(RAW_WITH_WARNINGS)
+
+    assert d.get("analog_in_1") == 16000
+    assert d.get("analog_in_2") == 0
+    assert d.get("analog_in_3") == 30000
+    assert d.get("backup_batt_pct") == 100
+    assert d.get("backup_batt_pct_raw") == pytest.approx(130.0)
+    assert d.get("device_status") == "0000000000-0F0FFFFFFF"
+    assert d.get("device_status_len_bits") == 80
+    assert d.get("device_status_hi") == "0000000000"
+    assert d.get("device_status_lo") == "0F0FFFFFFF"
+    assert d.get("uart_device_type") == 3
+    assert d.get("uart_device_type_label") == "invalid"
+    assert d.get("digital_fuel_sensor_data") == "FUELX|DATA"
+    assert d.get("dfs_count") == 2
+    assert d.get("dfs_raw_list") == '["FUELX", "DATA"]'
+    warnings = set(d.get("validation_warnings") or [])
+    assert "analog_in_1_mv_clamped" in warnings
+    assert "analog_in_2_mv_clamped" in warnings
+    assert "analog_in_3_mv_clamped" in warnings
+    assert "backup_batt_pct_clamped" in warnings
+    assert "uart_device_type_invalid" in warnings
+    assert d.get("validation_warning") in (1, True)
+    warnings_json = d.get("validation_warnings_json") or ""
+    assert "analog_in_1_mv_clamped" in warnings_json
