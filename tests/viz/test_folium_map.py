@@ -1,0 +1,54 @@
+import json
+from datetime import datetime
+
+import pytest
+
+try:  # pragma: no cover - compatibilidad con stdlib
+    import pytz
+except ModuleNotFoundError:  # pragma: no cover - fallback sin pytz
+    from zoneinfo import ZoneInfo
+
+    class _Zone:
+        @staticmethod
+        def timezone(name: str):
+            return ZoneInfo(name)
+
+    pytz = _Zone()  # type: ignore
+
+pytest.importorskip("folium")
+
+from viz.folium_map import render_map
+
+
+def sample_points():
+    tz = pytz.timezone("America/Santiago")
+    return [
+        {
+            "lat": -33.45,
+            "lon": -70.66,
+            "dt_local": tz.localize(datetime(2023, 8, 1, 8, 0, 0)),
+            "report_type": "10",
+            "is_buffer": False,
+        },
+        {
+            "lat": -33.451,
+            "lon": -70.661,
+            "dt_local": tz.localize(datetime(2023, 8, 1, 8, 15, 0)),
+            "report_type": "10",
+            "is_buffer": True,
+        },
+    ]
+
+
+def test_render_map_creates_files(tmp_path):
+    html_path = tmp_path / "map.html"
+    geojson_path = tmp_path / "map.geojson"
+    render_map(sample_points(), str(html_path), str(geojson_path))
+    assert html_path.exists()
+    assert geojson_path.exists()
+    data = json.loads(geojson_path.read_text(encoding="utf-8"))
+    assert data["type"] == "FeatureCollection"
+    assert len(data["features"]) == 2
+    html_content = html_path.read_text(encoding="utf-8")
+    assert "Directo" in html_content
+    assert "Buffer" in html_content
