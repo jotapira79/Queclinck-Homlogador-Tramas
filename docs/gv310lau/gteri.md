@@ -210,7 +210,6 @@ Estructura JSON sugerida para `parse_gteri(trama: str) -> dict`:
   "hour_meter": "0000102:34:33",
   "ai1": 42,
   "ai2": 11172,
-  "backup_batt_pct": 100,
   "device_status": "210000",
   "uart_type": 0,
   "fuel": { "type": "TMPS", "raw": "08351B00043C" },

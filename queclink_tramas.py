@@ -401,27 +401,47 @@ def parse_line_to_record(line: str) -> Optional[Dict[str, Any]]:
     send_time, count_hex = extract_tail(fields)
     ce.send_time, ce.count_hex = send_time, count_hex
     model_data = parse_model_specific(ce.device_name, fields, nxt)
-    ce.raw_after_pam = model_data.get("remaining_blob", "")
+    ce.raw_after_pam = model_data.pop("remaining_blob", "")
     base = asdict(ce)
     base.update(model_data)
     base["version"] = base.pop("full_protocol_version")
     base["count_dec"] = safe_int(base.get("count_hex"), 16) if base.get("count_hex") else None
-    base["lat_lon_valid"] = 1 if (base.get("lat") is not None and base.get("lon") is not None) else 0
     base["model"] = ce.device_name.upper()
     warnings = base.get("validation_warnings")
     if warnings:
         if not isinstance(warnings, list):
             warnings = [warnings]
         base["validation_warnings"] = warnings
-        base["validation_warning"] = 1
-        base["validation_warnings_json"] = json.dumps(warnings, ensure_ascii=False)
+    elif warnings is None:
+        base.pop("validation_warnings", None)
     else:
-        base["validation_warning"] = 0
-        base["validation_warnings_json"] = None
-        if warnings is None:
-            base.pop("validation_warnings", None)
-        else:
-            base["validation_warnings"] = []
+        base["validation_warnings"] = []
+
+    for key in {
+        "analog_in_1_raw",
+        "analog_in_1_mv",
+        "analog_in_1_pct",
+        "analog_in_2_raw",
+        "analog_in_2_mv",
+        "analog_in_2_pct",
+        "analog_in_3_raw",
+        "analog_in_3_mv",
+        "analog_in_3_pct",
+        "dfs_raw_list",
+        "dfs_count",
+        "backup_batt_pct",
+        "backup_batt_pct_raw",
+        "device_status_raw",
+        "device_status_len_bits",
+        "device_status_hi",
+        "device_status_lo",
+        "uart_device_type_label",
+        "remaining_blob",
+        "lat_lon_valid",
+        "validation_warning",
+        "validation_warnings_json",
+    }:
+        base.pop(key, None)
     return base
 
 def iter_messages_from_txt(path: str):
@@ -493,34 +513,12 @@ CREATE TABLE IF NOT EXISTS gteri_records (
     analog_in_1 TEXT,
     analog_in_2 TEXT,
     analog_in_3 TEXT,
-    analog_in_1_raw TEXT,
-    analog_in_1_mv INTEGER,
-    analog_in_1_pct REAL,
-    analog_in_2_raw TEXT,
-    analog_in_2_mv INTEGER,
-    analog_in_2_pct REAL,
-    analog_in_3_raw TEXT,
-    analog_in_3_mv INTEGER,
-    analog_in_3_pct REAL,
     digital_fuel_sensor_data TEXT,
-    dfs_raw_list TEXT,
-    dfs_count INTEGER,
-    backup_batt_pct INTEGER,
-    backup_batt_pct_raw REAL,
     device_status TEXT,
-    device_status_raw TEXT,
-    device_status_len_bits INTEGER,
-    device_status_hi TEXT,
-    device_status_lo TEXT,
     uart_device_type INTEGER,
-    uart_device_type_label TEXT,
-    remaining_blob TEXT,
     send_time TEXT,
     count_hex TEXT,
-    count_dec INTEGER,
-    lat_lon_valid INTEGER,
-    validation_warning INTEGER,
-    validation_warnings_json TEXT
+    count_dec INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_model ON gteri_records(model);
 CREATE INDEX IF NOT EXISTS idx_imei ON gteri_records(imei);
@@ -530,28 +528,7 @@ CREATE INDEX IF NOT EXISTS idx_gnssutc ON gteri_records(gnss_utc);
 def ensure_additional_columns(conn: sqlite3.Connection) -> None:
     cur = conn.execute("PRAGMA table_info('gteri_records')")
     columns = {row[1] for row in cur.fetchall()}
-    required_columns = {
-        "digital_fuel_sensor_data": "TEXT",
-        "dfs_raw_list": "TEXT",
-        "dfs_count": "INTEGER",
-        "analog_in_1_raw": "TEXT",
-        "analog_in_1_mv": "INTEGER",
-        "analog_in_1_pct": "REAL",
-        "analog_in_2_raw": "TEXT",
-        "analog_in_2_mv": "INTEGER",
-        "analog_in_2_pct": "REAL",
-        "analog_in_3_raw": "TEXT",
-        "analog_in_3_mv": "INTEGER",
-        "analog_in_3_pct": "REAL",
-        "backup_batt_pct_raw": "REAL",
-        "device_status_raw": "TEXT",
-        "device_status_len_bits": "INTEGER",
-        "device_status_hi": "TEXT",
-        "device_status_lo": "TEXT",
-        "uart_device_type_label": "TEXT",
-        "validation_warning": "INTEGER",
-        "validation_warnings_json": "TEXT",
-    }
+    required_columns = {}
     for col, col_type in required_columns.items():
         if col not in columns:
             conn.execute(f"ALTER TABLE gteri_records ADD COLUMN {col} {col_type}")
@@ -566,15 +543,10 @@ def insert_records(db_path: str, rows: List[dict]) -> None:
             "gnss_acc","speed_kmh","azimuth_deg","altitude_m","lon","lat","gnss_utc","mcc","mnc","lac",
             "cell_id","pos_append_mask","satellites","dop1","dop2","dop3","gnss_trigger_type","gnss_jamming_state",
             "mileage_km","hour_meter","analog_in_1","analog_in_2","analog_in_3",
-            "analog_in_1_raw","analog_in_1_mv","analog_in_1_pct",
-            "analog_in_2_raw","analog_in_2_mv","analog_in_2_pct",
-            "analog_in_3_raw","analog_in_3_mv","analog_in_3_pct",
-            "digital_fuel_sensor_data","dfs_raw_list","dfs_count",
-            "backup_batt_pct","backup_batt_pct_raw",
-            "device_status","device_status_raw","device_status_len_bits","device_status_hi","device_status_lo",
-            "uart_device_type","uart_device_type_label",
-            "remaining_blob","send_time","count_hex","count_dec","lat_lon_valid",
-            "validation_warning","validation_warnings_json"
+            "digital_fuel_sensor_data",
+            "device_status",
+            "uart_device_type",
+            "send_time","count_hex","count_dec"
         ]
         placeholders = ",".join(["?"]*len(cols))
         sql = f"INSERT INTO gteri_records({','.join(cols)}) VALUES({placeholders})"
