@@ -44,6 +44,9 @@ def _segment_color(is_buffer: bool) -> str:
 
 
 def _add_polyline(map_obj: Map, segment: List[dict]) -> None:
+    if len(segment) < 2:
+        return
+
     color = _segment_color(segment[0].get("is_buffer"))
     coords = [(p["lat"], p["lon"]) for p in segment]
     line = PolyLine(coords, color=color, weight=4, opacity=0.8)
