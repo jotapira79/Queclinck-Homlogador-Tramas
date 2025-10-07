@@ -31,6 +31,30 @@ python -m viz.cli \
   --out salidas/mapa_diario
 ```
 
+**PowerShell** (continuador <code>`</code>):
+
+```powershell
+py -m viz.cli `
+  --db salida.db `
+  --imei 8646960600004173 `
+  --date 2023-08-01 `
+  --provider "CartoDB Positron" `
+  --out salidas/mapa_diario
+  ```
+
+- **CMD** (continuador `^`):
+
+  ```cmd
+  py -m viz.cli ^
+    --db salida.db ^
+    --imei 8646960600004173 ^
+    --date 2023-08-01 ^
+    --provider "CartoDB Positron" ^
+    --out salidas/mapa_diario
+  ```
+
+Consulta `docs/viz/windows.md` para notas adicionales y solución de problemas comunes.
+
 Salida esperada:
 
 ```
