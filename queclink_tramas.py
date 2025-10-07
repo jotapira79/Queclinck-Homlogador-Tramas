@@ -12,6 +12,7 @@ Uso rápido:
 """
 import argparse
 import csv
+import json
 import os
 import re
 import sqlite3
@@ -137,50 +138,255 @@ def parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict
     remaining = fields[start_idx:-2] if len(fields) >= (start_idx + 2) else fields[start_idx:]
     out: Dict[str, Any] = {}
     def looks_like_hourmeter(s: str) -> bool:
-        return bool(re.fullmatch(r"\\d{1,7}:\\d{2}:\\d{2}", s or ""))
+        return bool(re.fullmatch(r"\d{1,7}:\d{2}:\d{2}", s or ""))
+
+    def to_mask_value(val: Optional[str]) -> Optional[int]:
+        if not val:
+            return None
+        try:
+            return int(val, 16)
+        except ValueError:
+            try:
+                return int(val)
+            except ValueError:
+                return None
+
+    mask_value = to_mask_value(fields[start_idx - 1] if start_idx - 1 < len(fields) else None)
+    eri_mask_value = to_mask_value(fields[4] if len(fields) > 4 else None)
+
+    def mask_has(bit: int) -> bool:
+        return mask_value is not None and (mask_value & bit) != 0
+
     cursor = 0
-    if cursor < len(remaining) and (remaining[cursor] or "") != "":
-        maybe_sat = remaining[cursor]
-        if re.fullmatch(r"\\d{1,2}", maybe_sat or ""):
-            out["satellites"] = safe_int(maybe_sat)
+    if cursor < len(remaining):
+        raw_sat = remaining[cursor]
+        if mask_has(0x01):
+            out["satellites"] = safe_int(raw_sat) if (raw_sat or "") != "" else None
             cursor += 1
-    dop_list = []
-    dop_seen = 0
-    for _ in range(3):
-        if cursor < len(remaining):
-            v = remaining[cursor]
-            if re.fullmatch(r"\\d{1,2}(\\.\\d{1,2})?", v or ""):
-                dop_list.append(safe_float(v))
-                cursor += 1
-                dop_seen += 1
-            else:
-                break
-    if dop_seen > 0:
-        out["dop1"] = dop_list[0] if len(dop_list) > 0 else None
-        out["dop2"] = dop_list[1] if len(dop_list) > 1 else None
-        out["dop3"] = dop_list[2] if len(dop_list) > 2 else None
-    else:
-        if cursor < len(remaining) and re.fullmatch(r"\\d", remaining[cursor] or ""):
-            out["gnss_trigger_type"] = safe_int(remaining[cursor]); cursor += 1
-        if cursor < len(remaining) and re.fullmatch(r"\\d", remaining[cursor] or ""):
-            out["gnss_jamming_state"] = safe_int(remaining[cursor]); cursor += 1
-    if cursor < len(remaining) and re.fullmatch(r"\\d+(\\.\\d)?", remaining[cursor] or ""):
-        out["mileage_km"] = safe_float(remaining[cursor]); cursor += 1
-    if cursor < len(remaining) and looks_like_hourmeter(remaining[cursor] or ""):
-        out["hour_meter"] = remaining[cursor]; cursor += 1
-    for i in range(1, 4):
-        if cursor < len(remaining) and (remaining[cursor] or "") != "" and re.fullmatch(r"-?\\d+(\\.\\d+)?|F\\d{1,3}", remaining[cursor] or ""):
-            out[f"analog_in_{i}"] = remaining[cursor]; cursor += 1
-        else:
+        elif (raw_sat or "") != "" and re.fullmatch(r"\d{1,2}", raw_sat or ""):
+            out["satellites"] = safe_int(raw_sat)
+            cursor += 1
+
+    dop_values: List[Optional[float]] = []
+    dop_pattern = r"\d{1,2}(?:\.\d{1,2})?"
+    for idx in range(3):
+        if cursor >= len(remaining):
             break
-    if cursor < len(remaining) and re.fullmatch(r"\\d{1,3}", remaining[cursor] or ""):
-        val = safe_int(remaining[cursor])
-        if val is not None and 0 <= val <= 100:
-            out["backup_batt_pct"] = val; cursor += 1
-    if cursor < len(remaining) and re.fullmatch(r"[0-9A-Fa-f]{6,10}", remaining[cursor] or ""):
-        out["device_status"] = (remaining[cursor] or "").upper(); cursor += 1
-    if cursor < len(remaining) and re.fullmatch(r"\\d{1,2}", remaining[cursor] or ""):
-        out["uart_device_type"] = safe_int(remaining[cursor]); cursor += 1
+        value = remaining[cursor]
+        expected = mask_has(0x02 << idx)
+        if (value or "") == "":
+            if expected:
+                dop_values.append(None)
+                cursor += 1
+                continue
+            break
+        if re.fullmatch(dop_pattern, value or ""):
+            dop_values.append(safe_float(value))
+            cursor += 1
+            continue
+        if expected:
+            dop_values.append(None)
+            cursor += 1
+            continue
+        break
+
+    if dop_values:
+        if len(dop_values) > 0:
+            out["dop1"] = dop_values[0]
+        if len(dop_values) > 1:
+            out["dop2"] = dop_values[1]
+        if len(dop_values) > 2:
+            out["dop3"] = dop_values[2]
+    else:
+        if cursor < len(remaining) and re.fullmatch(r"\d", remaining[cursor] or ""):
+            out["gnss_trigger_type"] = safe_int(remaining[cursor])
+            cursor += 1
+        if cursor < len(remaining) and re.fullmatch(r"\d", remaining[cursor] or ""):
+            out["gnss_jamming_state"] = safe_int(remaining[cursor])
+            cursor += 1
+
+    mileage_set = False
+    hour_set = False
+
+    if cursor < len(remaining) and looks_like_hourmeter(remaining[cursor] or ""):
+        out["hour_meter"] = remaining[cursor]
+        cursor += 1
+        hour_set = True
+    if cursor < len(remaining) and re.fullmatch(r"-?\d+(?:\.\d+)?", remaining[cursor] or ""):
+        out["mileage_km"] = safe_float(remaining[cursor])
+        cursor += 1
+        mileage_set = True
+    if not hour_set and cursor < len(remaining) and looks_like_hourmeter(remaining[cursor] or ""):
+        out["hour_meter"] = remaining[cursor]
+        cursor += 1
+        hour_set = True
+    if not mileage_set and cursor < len(remaining) and re.fullmatch(r"-?\d+(?:\.\d+)?", remaining[cursor] or ""):
+        out["mileage_km"] = safe_float(remaining[cursor])
+        cursor += 1
+        mileage_set = True
+    def skip_empty_values() -> None:
+        nonlocal cursor
+        while cursor < len(remaining) and (remaining[cursor] or "") == "":
+            cursor += 1
+
+    analog_pattern = r"-?\d+(?:\.\d+)?|F\d{1,3}"
+
+    def add_warning(code: str) -> None:
+        warnings = out.setdefault("validation_warnings", [])
+        if code not in warnings:
+            warnings.append(code)
+
+    def parse_analog_value(raw_value: Optional[str], index: int) -> None:
+        key = f"analog_in_{index}"
+        raw_key = f"{key}_raw"
+        mv_key = f"{key}_mv"
+        pct_key = f"{key}_pct"
+        out[key] = None
+        out[raw_key] = None
+        out[mv_key] = None
+        out[pct_key] = None
+        if raw_value is None or (raw_value or "") == "":
+            return
+        value = (raw_value or "").strip()
+        out[raw_key] = value
+        if not re.fullmatch(analog_pattern, value or ""):
+            add_warning(f"{key}_invalid")
+            return
+        max_mv = 30000 if index == 3 else 16000
+        mv_value: Optional[int] = None
+        pct_value: Optional[float] = None
+        if value.upper().startswith("F"):
+            pct_raw = safe_int(value[1:]) if len(value) > 1 else None
+            if pct_raw is None:
+                add_warning(f"{key}_invalid")
+                return
+            pct_clamped = max(0, min(100, pct_raw))
+            if pct_clamped != pct_raw:
+                add_warning(f"{key}_pct_clamped")
+            pct_value = float(pct_clamped)
+            mv_value = int(round(max_mv * (pct_value / 100.0)))
+        else:
+            numeric = safe_float(value)
+            if numeric is None:
+                add_warning(f"{key}_invalid")
+                return
+            mv_candidate = int(round(numeric))
+            mv_clamped = max(0, min(max_mv, mv_candidate))
+            if mv_clamped != mv_candidate:
+                add_warning(f"{key}_mv_clamped")
+            mv_value = mv_clamped
+            pct_value = round((mv_value / max_mv) * 100.0, 2) if max_mv > 0 else None
+        out[key] = mv_value
+        out[mv_key] = mv_value
+        out[pct_key] = pct_value
+
+    for i in range(1, 4):
+        if cursor >= len(remaining):
+            break
+        value = remaining[cursor]
+        if i == 3:
+            next_val = remaining[cursor + 1] if cursor + 1 < len(remaining) else None
+            next_next = remaining[cursor + 2] if cursor + 2 < len(remaining) else None
+            if (
+                re.fullmatch(r"\d{1,3}", (value or ""))
+                and next_val
+                and re.fullmatch(r"[0-9A-Fa-f]{6,10}", next_val or "")
+                and (next_next is None or re.fullmatch(r"\d{1,2}", next_next or ""))
+            ):
+                parse_analog_value(None, i)
+                break
+        parse_analog_value(value, i)
+        cursor += 1
+
+    skip_empty_values()
+    if cursor < len(remaining) and re.fullmatch(r"-?\d+(?:\.\d+)?", remaining[cursor] or ""):
+        raw_val = safe_float(remaining[cursor])
+        if raw_val is not None:
+            raw_int = int(round(raw_val))
+            clamped = max(0, min(100, raw_int))
+            out["backup_batt_pct_raw"] = raw_val
+            if clamped != raw_int:
+                add_warning("backup_batt_pct_clamped")
+            out["backup_batt_pct"] = clamped
+            cursor += 1
+    skip_empty_values()
+    if cursor < len(remaining):
+        candidate = remaining[cursor] or ""
+        upper_candidate = candidate.upper()
+        device_status_parsed = False
+        if re.fullmatch(r"[0-9A-F]{6}|[0-9A-F]{10}", upper_candidate):
+            device_status_parsed = True
+            bit_len = 24 if len(upper_candidate) == 6 else 40
+            out["device_status"] = upper_candidate
+            out["device_status_raw"] = candidate
+            out["device_status_len_bits"] = bit_len
+        elif re.fullmatch(r"[0-9A-F]{10}-[0-9A-F]{10}", upper_candidate):
+            device_status_parsed = True
+            hi, lo = upper_candidate.split("-")
+            out["device_status"] = upper_candidate
+            out["device_status_raw"] = candidate
+            out["device_status_len_bits"] = 80
+            out["device_status_hi"] = hi
+            out["device_status_lo"] = lo
+        if device_status_parsed:
+            cursor += 1
+        elif candidate:
+            out["device_status_raw"] = candidate
+            add_warning("device_status_invalid")
+            cursor += 1
+    skip_empty_values()
+    if cursor < len(remaining) and re.fullmatch(r"\d{1,2}", remaining[cursor] or ""):
+        parsed_uart = safe_int(remaining[cursor])
+        if parsed_uart is not None:
+            out["uart_device_type"] = parsed_uart
+            label_map = {0: "unknown", 1: "type_1", 7: "type_7"}
+            out["uart_device_type_label"] = label_map.get(parsed_uart, "invalid")
+            if parsed_uart not in label_map:
+                add_warning("uart_device_type_invalid")
+        cursor += 1
+    skip_empty_values()
+    if (
+        eri_mask_value is not None
+        and (eri_mask_value & 0x01) != 0
+        and "uart_device_type" in out
+        and cursor < len(remaining)
+    ):
+        dfs_items: List[str] = []
+        dfs_truncated = False
+
+        def should_stop(token: Optional[str], has_items: bool) -> bool:
+            if token is None:
+                return True
+            token_str = (token or "").strip()
+            if token_str == "":
+                return True
+            upper = token_str.upper()
+            if upper in {"TMPS", "RF433", "RF433B", "BLE", "CAN", "1WIRE"}:
+                return True
+            if has_items and token_str.isdigit() and len(token_str) <= 2:
+                return True
+            if has_items and re.fullmatch(r"\d{4,}", token_str):
+                return True
+            if has_items and re.fullmatch(r"[0-9A-F]{8,}", upper):
+                return True
+            return False
+
+        while cursor < len(remaining):
+            token = remaining[cursor]
+            if should_stop(token, bool(dfs_items)):
+                break
+            if len(dfs_items) < 20:
+                dfs_items.append(token or "")
+            else:
+                dfs_truncated = True
+            cursor += 1
+        if dfs_items:
+            out["digital_fuel_sensor_data"] = dfs_items[0] if len(dfs_items) == 1 else "|".join(dfs_items)
+            out["dfs_raw_list"] = json.dumps(dfs_items, ensure_ascii=False)
+            out["dfs_count"] = len(dfs_items)
+        if dfs_truncated:
+            add_warning("digital_fuel_sensor_data_truncated")
+    skip_empty_values()
     out["remaining_blob"] = ",".join(remaining[cursor:])
     return out
 
@@ -195,13 +401,47 @@ def parse_line_to_record(line: str) -> Optional[Dict[str, Any]]:
     send_time, count_hex = extract_tail(fields)
     ce.send_time, ce.count_hex = send_time, count_hex
     model_data = parse_model_specific(ce.device_name, fields, nxt)
-    ce.raw_after_pam = model_data.get("remaining_blob", "")
+    ce.raw_after_pam = model_data.pop("remaining_blob", "")
     base = asdict(ce)
     base.update(model_data)
     base["version"] = base.pop("full_protocol_version")
     base["count_dec"] = safe_int(base.get("count_hex"), 16) if base.get("count_hex") else None
-    base["lat_lon_valid"] = 1 if (base.get("lat") is not None and base.get("lon") is not None) else 0
     base["model"] = ce.device_name.upper()
+    warnings = base.get("validation_warnings")
+    if warnings:
+        if not isinstance(warnings, list):
+            warnings = [warnings]
+        base["validation_warnings"] = warnings
+    elif warnings is None:
+        base.pop("validation_warnings", None)
+    else:
+        base["validation_warnings"] = []
+
+    for key in {
+        "analog_in_1_raw",
+        "analog_in_1_mv",
+        "analog_in_1_pct",
+        "analog_in_2_raw",
+        "analog_in_2_mv",
+        "analog_in_2_pct",
+        "analog_in_3_raw",
+        "analog_in_3_mv",
+        "analog_in_3_pct",
+        "dfs_raw_list",
+        "dfs_count",
+        "backup_batt_pct",
+        "backup_batt_pct_raw",
+        "device_status_raw",
+        "device_status_len_bits",
+        "device_status_hi",
+        "device_status_lo",
+        "uart_device_type_label",
+        "remaining_blob",
+        "lat_lon_valid",
+        "validation_warning",
+        "validation_warnings_json",
+    }:
+        base.pop(key, None)
     return base
 
 def iter_messages_from_txt(path: str):
@@ -273,30 +513,40 @@ CREATE TABLE IF NOT EXISTS gteri_records (
     analog_in_1 TEXT,
     analog_in_2 TEXT,
     analog_in_3 TEXT,
-    backup_batt_pct INTEGER,
+    digital_fuel_sensor_data TEXT,
     device_status TEXT,
     uart_device_type INTEGER,
-    remaining_blob TEXT,
     send_time TEXT,
     count_hex TEXT,
-    count_dec INTEGER,
-    lat_lon_valid INTEGER
+    count_dec INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_model ON gteri_records(model);
 CREATE INDEX IF NOT EXISTS idx_imei ON gteri_records(imei);
 CREATE INDEX IF NOT EXISTS idx_gnssutc ON gteri_records(gnss_utc);
 """
 
+def ensure_additional_columns(conn: sqlite3.Connection) -> None:
+    cur = conn.execute("PRAGMA table_info('gteri_records')")
+    columns = {row[1] for row in cur.fetchall()}
+    required_columns = {}
+    for col, col_type in required_columns.items():
+        if col not in columns:
+            conn.execute(f"ALTER TABLE gteri_records ADD COLUMN {col} {col_type}")
+
 def insert_records(db_path: str, rows: List[dict]) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(SCHEMA_SQL)
+        ensure_additional_columns(conn)
         cols = [
             "prefix","is_buff","version","imei","model","eri_mask","ext_power_mv","report_type","number",
             "gnss_acc","speed_kmh","azimuth_deg","altitude_m","lon","lat","gnss_utc","mcc","mnc","lac",
             "cell_id","pos_append_mask","satellites","dop1","dop2","dop3","gnss_trigger_type","gnss_jamming_state",
-            "mileage_km","hour_meter","analog_in_1","analog_in_2","analog_in_3","backup_batt_pct","device_status",
-            "uart_device_type","remaining_blob","send_time","count_hex","count_dec","lat_lon_valid"
+            "mileage_km","hour_meter","analog_in_1","analog_in_2","analog_in_3",
+            "digital_fuel_sensor_data",
+            "device_status",
+            "uart_device_type",
+            "send_time","count_hex","count_dec"
         ]
         placeholders = ",".join(["?"]*len(cols))
         sql = f"INSERT INTO gteri_records({','.join(cols)}) VALUES({placeholders})"
@@ -321,6 +571,7 @@ def process_file(in_path: str, out_db: str, sheet: Optional[str]=None, col: Opti
         conn = sqlite3.connect(out_db)
         try:
             conn.executescript(SCHEMA_SQL)
+            ensure_additional_columns(conn)
             conn.commit()
         finally:
             conn.close()
