@@ -10,8 +10,6 @@ from folium import FeatureGroup, Map, Marker, PolyLine
 from folium.features import DivIcon
 from folium.plugins import PolyLineTextPath
 
-from .geo import bearing, bearing_to_cardinal
-
 BUFFER_COLOR = "red"
 NON_BUFFER_COLOR = "blue"
 ARROW_SYMBOL = "➤"
@@ -24,19 +22,31 @@ def _ensure_parent(path: Path) -> None:
 
 def _tooltip(point: dict) -> str:
     dt_local = point["dt_local"]
-    dt_display = dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
+    time_label = _point_time_label(point)
+    if time_label:
+        dt_display = time_label
+    else:
+        dt_display = dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
     coords = f"({point['lat']:.5f}, {point['lon']:.5f})"
     report = point.get("report_type") or "?"
     source = "Buffer" if point.get("is_buffer") else "Directo"
     return f"{dt_display} | {coords} | {source} RT:{report}"
 
 
-def _point_direction(prev_point: dict, current_point: dict) -> str:
+def _point_time_label(point: dict) -> str:
+    dt_local = point.get("dt_local")
+    if dt_local is None:
+        return ""
     try:
-        angle = bearing(prev_point, current_point)
+        time_display = dt_local.strftime("%H:%M:%S")
     except Exception:
         return ""
-    return f"{bearing_to_cardinal(angle)} ({angle:.0f}°)"
+    tz_name = getattr(dt_local, "tzname", lambda: None)()
+    if tz_name and tz_name.strip():
+        tz_display = "Chile" if tz_name.upper() in {"CLT", "CLST"} else tz_name
+    else:
+        tz_display = "Chile"
+    return f"{time_display} {tz_display}".strip()
 
 
 def _segment_color(is_buffer: bool) -> str:
@@ -101,14 +111,14 @@ def render_map(
         ).add_to(marker_group)
 
         if last_point is not None:
-            direction = _point_direction(last_point, point)
-            if direction:
+            time_label = _point_time_label(point)
+            if time_label:
                 Marker(
                     location=((last_point["lat"] + point["lat"]) / 2, (last_point["lon"] + point["lon"]) / 2),
                     icon=DivIcon(
                         icon_size=(150, 36),
                         icon_anchor=(0, 0),
-                        html=f'<div style="font-size: 10px; color: {_segment_color(point.get("is_buffer"))};">{direction}</div>',
+                        html=f'<div style="font-size: 10px; color: {_segment_color(point.get("is_buffer"))};">{time_label}</div>',
                     ),
                 ).add_to(fmap)
 

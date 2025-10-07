@@ -60,6 +60,7 @@ def test_render_map_creates_files(tmp_path):
     html_content = html_path.read_text(encoding="utf-8")
     assert "Directo" in html_content
     assert "Buffer" in html_content
+    assert "08:10:00 Chile" in html_content
 
 
 def test_render_map_allows_single_point_segments(monkeypatch, tmp_path):
