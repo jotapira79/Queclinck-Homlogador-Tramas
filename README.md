@@ -33,6 +33,9 @@ El módulo `viz` entrega un CLI que genera un mapa HTML (Folium) y un GeoJSON ag
 recorridos por día local (`America/Santiago`). Los puntos buffer se dibujan en rojo y los
 reportes directos en azul, incluyendo tooltips con hora local y coordenadas.
 
+<details>
+<summary><strong>Linux/macOS</strong></summary>
+
 ```bash
 python -m viz.cli \
   --db salida.db \
@@ -42,29 +45,35 @@ python -m viz.cli \
   --out mapas/gv310lau_2023-08-01
 ```
 
-En Windows puedes usar los siguientes equivalentes:
+</details>
 
-- **PowerShell**
+<details>
+<summary><strong>Windows (PowerShell)</strong></summary>
 
-  ```powershell
-  py -m viz.cli `
-    --db salida.db `
-    --imei 864696060004173 `
-    --date 2023-08-01 `
-    --provider "CartoDB Positron" `
-    --out mapas/gv310lau_2023-08-01
-  ```
+```powershell
+py -m viz.cli `
+  --db salida.db `
+  --imei 864696060004173 `
+  --date 2023-08-01 `
+  --provider "CartoDB Positron" `
+  --out mapas/gv310lau_2023-08-01
+```
 
-- **CMD**
+</details>
 
-  ```cmd
-  py -m viz.cli ^
-    --db salida.db ^
-    --imei 864696060004173 ^
-    --date 2023-08-01 ^
-    --provider "CartoDB Positron" ^
-    --out mapas/gv310lau_2023-08-01
-  ```
+<details>
+<summary><strong>Windows (CMD)</strong></summary>
+
+```cmd
+py -m viz.cli ^
+  --db salida.db ^
+  --imei 864696060004173 ^
+  --date 2023-08-01 ^
+  --provider "CartoDB Positron" ^
+  --out mapas/gv310lau_2023-08-01
+```
+
+</details>
 
 > ℹ️ Consulta `docs/viz/windows.md` para más consejos y captura de pantalla del resultado.
 
