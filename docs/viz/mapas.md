@@ -22,9 +22,6 @@ reportes **directos** (no buffer) en azul y **buffer** en rojo.
 Usa el CLI `viz` (incluido en este repositorio) indicando la fecha **local** que deseas
 analizar. El comando produce un HTML interactivo y un GeoJSON con los puntos.
 
-<details>
-<summary><strong>Linux/macOS</strong></summary>
-
 ```bash
 python -m viz.cli \
   --db salida.db \
@@ -34,37 +31,27 @@ python -m viz.cli \
   --out salidas/mapa_diario
 ```
 
-</details>
+En Windows puedes usar `py` para ejecutar el intérprete:
 
-<details>
-<summary><strong>Windows (PowerShell)</strong></summary>
+- **PowerShell** (continuador `` ` ``):
 
-```powershell
-py -m viz.cli `
-  --db salida.db `
-  --imei 864696060004173 `
-  --date 2023-08-01 `
-  --provider "CartoDB Positron" `
-  --out salidas/mapa_diario
-```
+  ```powershell
+  py -m viz.cli --db salida.db --imei 864696060004173 --date 2023-08-01 `
+    --provider "CartoDB Positron" --out salidas/mapa_diario
+  ```
 
-</details>
+- **CMD** (continuador `^`):
 
-<details>
-<summary><strong>Windows (CMD)</strong></summary>
+  ```cmd
+  py -m viz.cli ^
+    --db salida.db ^
+    --imei 864696060004173 ^
+    --date 2023-08-01 ^
+    --provider "CartoDB Positron" ^
+    --out salidas/mapa_diario
+  ```
 
-```cmd
-py -m viz.cli ^
-  --db salida.db ^
-  --imei 864696060004173 ^
-  --date 2023-08-01 ^
-  --provider "CartoDB Positron" ^
-  --out salidas/mapa_diario
-```
-
-</details>
-
-> ℹ️ Revisa `docs/viz/windows.md` para notas adicionales y solución de problemas comunes.
+Consulta `docs/viz/windows.md` para notas adicionales y solución de problemas comunes.
 
 Salida esperada:
 
