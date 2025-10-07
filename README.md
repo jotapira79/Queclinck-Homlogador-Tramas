@@ -42,13 +42,26 @@ python -m viz.cli \
   --out mapas/gv310lau_2023-08-01
 ```
 
-> ℹ️ **Windows/PowerShell**: utiliza `py` en lugar de `python` y escribe el comando en una
-> sola línea o con acentos graves (`` ` ``) para los saltos de línea. Ejemplo equivalente:
+> 💡 **¿Usas Windows?**
 >
-> ```powershell
-> py -m viz.cli --db salida.db --imei 864696060004173 --date 2023-08-01 `
->   --provider "CartoDB Positron" --out mapas/gv310lau_2023-08-01
-> ```
+> - **PowerShell**: cambia `python` por `py` y mantén el comando en una sola línea o usa
+>   acentos graves (`` ` ``) para continuarlo.
+>
+>   ```powershell
+>   py -m viz.cli --db salida.db --imei 864696060004173 --date 2023-08-01 `
+>     --provider "CartoDB Positron" --out mapas/gv310lau_2023-08-01
+>   ```
+>
+> - **CMD**: también puedes ejecutarlo sustituyendo las barras invertidas por carets (`^`).
+>
+>   ```cmd
+>   py -m viz.cli ^
+>     --db salida.db ^
+>     --imei 864696060004173 ^
+>     --date 2023-08-01 ^
+>     --provider "CartoDB Positron" ^
+>     --out mapas\gv310lau_2023-08-01
+>   ```
 
 El comando anterior creará los archivos:
 
