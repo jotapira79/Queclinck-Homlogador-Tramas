@@ -1,0 +1,57 @@
+name: "+RESP/+BUFF:GTINF"
+device: "GV350CEU"
+message_family: "INF"
+encoding: "ASCII"
+delimiter: ","
+terminator: "$"
+
+
+schema:
+sections:
+- name: head
+fields:
+- { name: header, type: string, enum: ["+RESP:GTINF", "+BUFF:GTINF"] }
+- { name: protocol_version, type: hex, length: 6 }
+- { name: imei, type: string, pattern: "^[0-9]{15}$" }
+- { name: device_name, const: "GV350CEU", type: string }
+
+
+- name: body
+fields:
+- { name: field_1, type: string } # 11 / 22
+- { name: iccid, type: string }
+- { name: csq, type: int, min: 0, max: 99 }
+- { name: roaming, type: int, min: 0, max: 1 }
+- { name: service, type: int, min: 0, max: 1 }
+- { name: band_idx, type: int, nullable: true } # 13074 / 28018
+- { name: net_mode, type: int, nullable: true } # vacio / 3
+- { name: batt_v, type: float, nullable: true }
+- { name: ext_gnss, type: int, min: 0, max: 1 }
+- { name: sim_slot, type: int, min: 0, max: 2 }
+- { name: reserved_a, type: string, nullable: true }
+- { name: reserved_b, type: string, nullable: true }
+- { name: send_time_1, type: datetime, format: "YYYYMMDDHHMMSS" }
+- { name: reserved_c, type: string, nullable: true }
+- { name: zero_a, type: int, nullable: true }
+- { name: zero_b, type: int, nullable: true }
+- { name: di_hex, type: hex, length: 2 }
+- { name: do_hex, type: hex, length: 2 }
+- { name: tz, type: string }
+- { name: eio100, type: int, min: 0, max: 1 }
+- { name: send_time_2, type: datetime, format: "YYYYMMDDHHMMSS" }
+
+
+- name: tail
+fields:
+- { name: count_hex, type: hex, length: 4 }
+
+
+validation:
+rules:
+- { name: header_ok, assert: "header in ['+RESP:GTINF', '+BUFF:GTINF']" }
+- { name: device_ok, assert: "device_name == 'GV350CEU'" }
+
+
+examples:
+- raw: "+RESP:GTINF,74040A,862524060748775,GV350CEU,11,89999112400719062394,37,0,1,13074,,4.19,0,1,,,20251007213710,,0,0,0,00,00,+0000,0,20251007213751,6B91$"
+- raw: "+BUFF:GTINF,740904,862524060876527,GV350CEU,22,8935711001088072340f,38,0,1,28018,3,4.11,0,1,,,20251007143611,,0,0,0,11,00,+0000,0,20251007143612,34DA$"
