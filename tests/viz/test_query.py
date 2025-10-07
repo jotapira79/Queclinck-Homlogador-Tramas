@@ -1,6 +1,8 @@
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from viz.query import fetch_points_by_day
 
 
@@ -54,3 +56,52 @@ def test_fetch_points_by_day_orden(tmp_path):
     points = fetch_points_by_day(str(db_path), "123", "2023-08-01")
     times = [p["dt_local"] for p in points]
     assert times == sorted(times)
+
+
+def test_fetch_points_by_day_detects_alt_table(tmp_path):
+    db_path = tmp_path / "alt.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE records (
+                lon REAL,
+                lat REAL,
+                gnss_utc TEXT,
+                is_buff INTEGER,
+                report_type TEXT,
+                imei TEXT
+            );
+            """
+        )
+        conn.execute(
+            "INSERT INTO records(lon, lat, gnss_utc, is_buff, report_type, imei) VALUES(?,?,?,?,?,?)",
+            (-70.7, -33.4, "20230801060000", 0, "10", "456"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    points = fetch_points_by_day(str(db_path), "456", "2023-08-01")
+    assert len(points) == 1
+
+
+def test_fetch_points_by_day_missing_table(tmp_path):
+    db_path = tmp_path / "missing.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE foo (
+                lon REAL
+            );
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with pytest.raises(RuntimeError) as excinfo:
+        fetch_points_by_day(str(db_path), "123", "2023-08-01")
+
+    assert "Tablas disponibles: foo" in str(excinfo.value)

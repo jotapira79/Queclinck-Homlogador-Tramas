@@ -34,6 +34,37 @@ def _localize_utc(dt: datetime) -> datetime:
     return dt.replace(tzinfo=UTC)
 
 
+def _has_required_columns(conn: sqlite3.Connection, table: str) -> bool:
+    required = {"lon", "lat", "gnss_utc", "is_buff", "report_type", "imei"}
+    cur = conn.execute(f"PRAGMA table_info('{table}')")
+    columns = {row[1] for row in cur.fetchall()}
+    return required.issubset(columns)
+
+
+def _resolve_table(conn: sqlite3.Connection) -> str:
+    preferred = ["gteri_records", "records", "queclink_records"]
+    for name in preferred:
+        cur = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (name,)
+        )
+        if cur.fetchone() and _has_required_columns(conn, name):
+            return name
+
+    cur = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    )
+    candidates = [row[0] for row in cur.fetchall()]
+    for name in candidates:
+        if _has_required_columns(conn, name):
+            return name
+
+    tables = ", ".join(sorted(candidates)) or "<sin tablas>"
+    raise RuntimeError(
+        "No se encontró una tabla con columnas lon/lat/gnss_utc/is_buff/report_type/imei. "
+        f"Tablas disponibles: {tables}"
+    )
+
+
 @dataclass
 class TrackPoint:
     lon: float
@@ -107,10 +138,11 @@ def fetch_points_by_day(
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
+        table = _resolve_table(conn)
         cur = conn.execute(
-            """
+            f"""
             SELECT lon, lat, gnss_utc, is_buff, report_type
-            FROM gteri_records
+            FROM {table}
             WHERE imei = ? AND lon IS NOT NULL AND lat IS NOT NULL AND gnss_utc IS NOT NULL
             ORDER BY gnss_utc ASC
             """,
