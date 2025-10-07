@@ -22,7 +22,11 @@ def _ensure_parent(path: Path) -> None:
 
 def _tooltip(point: dict) -> str:
     dt_local = point["dt_local"]
-    dt_display = dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
+    time_label = _point_time_label(point)
+    if time_label:
+        dt_display = time_label
+    else:
+        dt_display = dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
     coords = f"({point['lat']:.5f}, {point['lon']:.5f})"
     report = point.get("report_type") or "?"
     source = "Buffer" if point.get("is_buffer") else "Directo"
