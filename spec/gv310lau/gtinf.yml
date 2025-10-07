@@ -1,0 +1,56 @@
+name: "+RESP/+BUFF:GTINF"
+device: "GV310LAU"
+message_family: "INF"
+encoding: "ASCII"
+delimiter: ","
+terminator: "$"
+
+schema:
+  sections:
+    - name: head
+      fields:
+        - { name: header, type: string, enum: ["+RESP:GTINF", "+BUFF:GTINF"] }
+        - { name: protocol_version, type: hex, length: 6 }
+        - { name: imei, type: string, pattern: "^[0-9]{15}$" }
+        - { name: device_name, const: "GV310LAU", type: string }
+
+    - name: body
+      fields:
+        - { name: device_type, type: int, min: 0, max: 255 }
+        - { name: hardware_version, type: string, max_length: 10 }
+        - { name: firmware_version, type: string, max_length: 20 }
+        - { name: imei_repeat, type: string, pattern: "^[0-9]{15}$" }
+        - { name: sim1_imsi, type: string, pattern: "^[0-9]{10,15}$" }
+        - { name: sim2_imsi, type: string, nullable: true }
+        - { name: iccid, type: string, nullable: true }
+        - { name: network_type, type: enum, values: ["GSM", "WCDMA", "LTE", "NB-IoT", "Unknown"] }
+        - { name: band, type: string, max_length: 8, nullable: true }
+        - { name: operator_name, type: string, max_length: 32 }
+        - { name: csq, type: int, min: 0, max: 99 }
+        - { name: service_status, type: enum, values: [0, 1] }
+        - { name: roaming, type: enum, values: [0, 1] }
+        - { name: report_interval_s, type: int, min: 0, max: 86400 }
+
+    - name: tail
+      fields:
+        - { name: send_time, type: datetime, format: "YYYYMMDDHHMMSS" }
+        - { name: count_hex, type: hex, length: 4 }
+
+validation:
+  rules:
+    - { name: header_format, assert: "header in ['+RESP:GTINF', '+BUFF:GTINF']" }
+    - { name: imei_match, assert: "imei == imei_repeat" }
+    - { name: has_utc, assert: "len(send_time) == 14" }
+
+examples:
+  - raw: "+RESP:GTINF,050602,868589060792986,GV310LAU,06,A02,A08V21,868589060792986,724999123456789,,8935711001088072605,LTE,B7,ENTEL,23,1,0,60,20250921223813,3C24$"
+    parsed:
+      imei: "868589060792986"
+      device_name: "GV310LAU"
+      firmware_version: "A08V21"
+      iccid: "8935711001088072605"
+      network_type: "LTE"
+      operator_name: "ENTEL"
+      csq: 23
+      service_status: 1
+      send_time: "2025-09-21T22:38:13Z"
