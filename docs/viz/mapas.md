@@ -31,7 +31,31 @@ python -m viz.cli \
   --out salidas/mapa_diario
 ```
 
-> ℹ️ Para instrucciones específicas de Windows (PowerShell y CMD) revisa `docs/viz/windows.md`.
+En Windows puedes ejecutar el CLI de estas formas:
+
+- **PowerShell**
+
+  ```powershell
+  py -m viz.cli `
+    --db salida.db `
+    --imei 864696060004173 `
+    --date 2023-08-01 `
+    --provider "CartoDB Positron" `
+    --out salidas/mapa_diario
+  ```
+
+- **CMD**
+
+  ```cmd
+  py -m viz.cli ^
+    --db salida.db ^
+    --imei 864696060004173 ^
+    --date 2023-08-01 ^
+    --provider "CartoDB Positron" ^
+    --out salidas/mapa_diario
+  ```
+
+> ℹ️ Revisa `docs/viz/windows.md` para notas adicionales y solución de problemas comunes.
 
 Salida esperada:
 

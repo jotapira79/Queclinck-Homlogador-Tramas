@@ -42,8 +42,31 @@ python -m viz.cli \
   --out mapas/gv310lau_2023-08-01
 ```
 
-> ℹ️ ¿Trabajas en Windows? Consulta la guía dedicada en `docs/viz/windows.md` para ver ejemplos
-> listos para PowerShell y CMD (incluye equivalentes con `py`, `^` y acentos graves).
+En Windows puedes usar los siguientes equivalentes:
+
+- **PowerShell**
+
+  ```powershell
+  py -m viz.cli `
+    --db salida.db `
+    --imei 864696060004173 `
+    --date 2023-08-01 `
+    --provider "CartoDB Positron" `
+    --out mapas/gv310lau_2023-08-01
+  ```
+
+- **CMD**
+
+  ```cmd
+  py -m viz.cli ^
+    --db salida.db ^
+    --imei 864696060004173 ^
+    --date 2023-08-01 ^
+    --provider "CartoDB Positron" ^
+    --out mapas/gv310lau_2023-08-01
+  ```
+
+> ℹ️ Consulta `docs/viz/windows.md` para más consejos y captura de pantalla del resultado.
 
 El comando anterior creará los archivos:
 
