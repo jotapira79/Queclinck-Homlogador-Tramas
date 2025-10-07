@@ -31,7 +31,7 @@ python -m viz.cli \
   --out salidas/mapa_diario
 ```
 
-En Windows puedes usar `py` para ejecutar el intérprete:
+En Windows usa el lanzador `py` y el continuador adecuado según la terminal:
 
 - **PowerShell** (continuador `` ` ``):
 
