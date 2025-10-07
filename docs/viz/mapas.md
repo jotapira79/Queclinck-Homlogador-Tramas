@@ -31,27 +31,27 @@ python -m viz.cli \
   --out salidas/mapa_diario
 ```
 
-> 💡 **¿Trabajas en Windows?**
->
-> - En **PowerShell**, cambia `python` por `py` y escribe todo en una línea (o usa acentos
->   graves `` ` `` para dividirlo).
->
->   ```powershell
->   py -m viz.cli --db salida.db --imei 864696060004173 --date 2023-08-01 `
->     --provider "CartoDB Positron" --out salidas/mapa_diario
->   ```
->
-> - En **CMD**, reemplaza las barras invertidas por carets (`^`) y ajusta la ruta de salida
->   usando `\`.
->
->   ```cmd
->   py -m viz.cli ^
->     --db salida.db ^
->     --imei 864696060004173 ^
->     --date 2023-08-01 ^
->     --provider "CartoDB Positron" ^
->     --out salidas\mapa_diario
->   ```
+### Uso en Windows
+
+- En **PowerShell** cambia `python` por `py` y ejecuta el comando en una sola línea (o divide
+  con acentos graves `` ` ``).
+
+  ```powershell
+  py -m viz.cli --db salida.db --imei 864696060004173 --date 2023-08-01 `
+    --provider "CartoDB Positron" --out salidas/mapa_diario
+  ```
+
+- En **CMD** reemplaza las barras invertidas (`\`) por carets (`^`) y duplica las barras en las
+  rutas.
+
+  ```cmd
+  py -m viz.cli ^
+    --db salida.db ^
+    --imei 864696060004173 ^
+    --date 2023-08-01 ^
+    --provider "CartoDB Positron" ^
+    --out salidas\mapa_diario
+  ```
 
 Salida esperada:
 
