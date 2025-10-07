@@ -1,0 +1,58 @@
+name: "+RESP/+BUFF:GTINF"
+device: "GV58LAU"
+message_family: "INF"
+encoding: "ASCII"
+delimiter: ","
+terminator: "$"
+
+
+schema:
+sections:
+- name: head
+fields:
+- { name: header, type: string, enum: ["+RESP:GTINF", "+BUFF:GTINF"] }
+- { name: protocol_version, type: hex, length: 10 }
+- { name: imei, type: string, pattern: "^[0-9]{15}$" }
+- { name: device_name, const: "GV58LAU", type: string }
+
+
+- name: body
+fields:
+- { name: field_1, type: string } # 11 / 22
+- { name: iccid, type: string }
+- { name: csq, type: int, min: 0, max: 99 }
+- { name: roaming, type: int, min: 0, max: 1 }
+- { name: service, type: int, min: 0, max: 1 }
+- { name: band_idx, type: int, nullable: true } # 12943 / 13742
+- { name: net_mode, type: int, nullable: true } # 3 / 0
+- { name: batt_v, type: float, nullable: true } # 4.15 / 4.22
+- { name: ext_gnss, type: int, min: 0, max: 1 }
+- { name: sim_slot, type: int, min: 0, max: 2 }
+- { name: reserved_a, type: string, nullable: true }
+- { name: reserved_b, type: string, nullable: true }
+- { name: send_time_1, type: datetime, format: "YYYYMMDDHHMMSS" } # 1er timestamp
+- { name: zero_a, type: int, nullable: true }
+- { name: reserved_c, type: string, nullable: true }
+- { name: reserved_d, type: string, nullable: true }
+- { name: reserved_e, type: string, nullable: true }
+- { name: di_hex, type: hex, length: 2 } # 00 / 01
+- { name: do_hex, type: hex, length: 2 } # 00
+- { name: tz, type: string } # +0000
+- { name: eio100, type: int, min: 0, max: 1 }
+- { name: send_time_2, type: datetime, format: "YYYYMMDDHHMMSS" } # 2º timestamp
+
+
+- name: tail
+fields:
+- { name: count_hex, type: hex, length: 4 }
+
+
+validation:
+rules:
+- { name: header_ok, assert: "header in ['+RESP:GTINF', '+BUFF:GTINF']" }
+- { name: device_ok, assert: "device_name == 'GV58LAU'" }
+
+
+examples:
+- raw: "+RESP:GTINF,8020040900,866314061635635,GV58LAU,11,89999202003110001341,58,0,1,12943,3,4.15,0,1,,,20251007213819,0,,,,00,00,+0000,0,20251007215523,48D6$"
+- raw: "+BUFF:GTINF,8020040305,866314060965330,GV58LAU,22,89999112400719088191,26,0,1,13742,0,4.22,0,1,,,20250930110413,0,,,,01,00,+0000,0,20250930110413,ED27$"
