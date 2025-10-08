@@ -1,10 +1,10 @@
 name: "+RESP/+BUFF:GTINF"
-device: "GV58LAU"
+device: "GV350CEU"
 message_family: "INF"
 encoding: "ASCII"
 delimiter: ","
 terminator: "$"
-version_field: { name: full_protocol_version, length_variant: [6,10], format: hex }
+version_field: { name: full_protocol_version, length_variant: [6,7], format: hex }
 
 schema:
   sections:
@@ -12,9 +12,9 @@ schema:
       fields:
         - { name: header, const_any: ["+RESP:GT", "+BUFF:GT"], type: string }
         - { name: message, const: "INF", type: string }
-        - { name: full_protocol_version, type: hex, length_variant: [6,10] }
+        - { name: full_protocol_version, type: hex, length_variant: [6,7] }
         - { name: imei, type: string, length: 15, pattern: "^[0-9]{15}$" }
-        - { name: device_name, const: "GV58LAU", type: string }
+        - { name: device_name, const: "GV350CEU", type: string }
 
     - name: body
       fields:
@@ -52,7 +52,7 @@ validation:
     - { name: terminator,        assert: "line.endswith('$')" }
 
 examples:
-  - raw: "+RESP:GTINF,8020040900,866314061635635,GV58LAU,11,89999202003110001341,58,0,1,12943,3,4.15,0,1,,,20251007213819,0,,,,00,00,+0000,0,20251007215523,48D6$"
+  - raw: "+RESP:GTINF,74040A,862524060748775,GV350CEU,11,89999112400719062394,37,0,1,13074,,4.19,0,1,,,20251007213710,,0,0,0,00,00,+0000,0,20251007213751,6B91$"
     parsed_keys_must_include: [imei, device_name, motion_status, timezone_offset, send_time, count_hex]
-  - raw: "+BUFF:GTINF,8020040305,866314060965330,GV58LAU,22,89999112400719088191,26,0,1,13742,0,4.22,0,1,,,20250930110413,0,,,,01,00,+0000,0,20250930110413,ED27$"
+  - raw: "+BUFF:GTINF,740904,862524060876527,GV350CEU,22,8935711001088072340f,38,0,1,28018,3,4.11,0,1,,,20251007143611,,0,0,0,11,00,+0000,0,20251007143612,34DA$"
     parsed_keys_must_include: [imei, device_name, motion_status, timezone_offset, send_time, count_hex]
