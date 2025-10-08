@@ -31,7 +31,6 @@ schema:
         - { name: power_saving_mode, type: int, min: 0, max: 9 }
         - { name: ext_gnss_antenna, type: int, min: 0, max: 9 }
         - { name: last_fix_utc, type: datetime, format: "YYYYMMDDHHMMSS" }
-        - { name: reserved1, type: string, optional: true }             # hueco después de last_fix_utc
         - { name: pin_mask, type: hex, length_variant: [1,2] }
         - { name: ain1, type: string }                                  # F(0-100) ó mV
         - { name: ain2, type: string }
@@ -40,10 +39,10 @@ schema:
         - { name: do_mask, type: hex, max_length: 4 }
         - { name: timezone_offset, type: string, length: 5, pattern: "^[+-][0-9]{4}$" }
         - { name: dst, type: int, enum: [0,1] }
-        - { name: send_time, type: datetime, format: "YYYYMMDDHHMMSS" }
 
     - name: tail
       fields:
+        - { name: send_time, type: datetime, format: "YYYYMMDDHHMMSS" }
         - { name: count_hex, type: hex, length: 4 }
 
 validation:
