@@ -1,6 +1,6 @@
 # Subpaquete para cargar especificaciones de mensajes Queclink.
 """Herramientas relacionadas con esquemas y metadatos de mensajes."""
 
-from .loader import load_spec
+from .loader import get_spec_path
 
-__all__ = ["load_spec"]
+__all__ = ["get_spec_path"]
