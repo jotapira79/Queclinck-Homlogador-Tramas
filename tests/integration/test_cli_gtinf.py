@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from queclink.specs.loader import get_spec_columns
+
 
 SAMPLES = [
     # GV310LAU
@@ -54,35 +56,29 @@ def test_cli_ingests_gtinf_end_to_end(tmp_path: Path):
     conn = sqlite3.connect(str(outdb))
     cur = conn.cursor()
 
-    # Total de filas
-    cur.execute("SELECT COUNT(*) FROM telemetry_messages WHERE message='GTINF'")
-    total, = cur.fetchone()
-    assert total == len(SAMPLES), f"Se esperaban {len(SAMPLES)} filas GTINF"
-
-    # 2 por modelo
+    # Validar tablas dinámicas por modelo
     for dev in ("GV310LAU", "GV58LAU", "GV350CEU"):
+        table = f"gtinf_{dev.lower()}"
         cur.execute(
-            "SELECT COUNT(*) FROM telemetry_messages WHERE message='GTINF' AND device=?",
-            (dev,),
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
         )
+        assert cur.fetchone() is not None, f"No se creó la tabla {table}"
+
+        cur.execute(f"SELECT COUNT(*) FROM {table}")
         count, = cur.fetchone()
         assert count == 2, f"Se esperaban 2 filas GTINF para {dev}"
 
-    # Campos clave no nulos y formato básico
-    cur.execute("""
-        SELECT message, device, source, imei, protocol_version, send_time_iso, count_hex, tz_offset, dst, raw
-        FROM telemetry_messages
-    """)
-    rows = cur.fetchall()
-    assert rows, "No hay filas en la tabla telemetry_messages"
-    for msg, dev, src, imei, proto, send_iso, cnt, tz, dst, raw in rows:
-        assert msg == "GTINF"
-        assert dev in {"GV310LAU", "GV58LAU", "GV350CEU"}
-        assert src in {"RESP", "BUFF"}
-        assert imei and len(imei) == 15
-        assert proto and proto == proto.upper()
-        assert cnt and cnt == cnt.upper()
-        assert tz and len(tz) == 5
-        assert raw.endswith("$")
+        cur.execute(f"PRAGMA table_info({table})")
+        schema_columns = [row[1] for row in cur.fetchall()]
+        assert schema_columns == get_spec_columns("GTINF", dev), "Columnas no coinciden con la spec"
+
+        cur.execute(f"SELECT DISTINCT message FROM {table}")
+        messages = {row[0] for row in cur.fetchall()}
+        assert messages == {"INF"}
+
+        cur.execute(f"SELECT DISTINCT header FROM {table}")
+        headers = {row[0] for row in cur.fetchall()}
+        assert headers == {"+RESP:GT", "+BUFF:GT"}
 
     conn.close()
