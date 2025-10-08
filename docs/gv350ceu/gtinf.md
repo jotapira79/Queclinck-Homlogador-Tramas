@@ -14,10 +14,7 @@ Se envía periódicamente cuando la función está habilitada por el comando:
 
 
 ### Estructura general
-+RESP|+BUFF:GTINF,<ProtocolVersion>,<IMEI>,GV350CEU,<MotionStatus>,<ICCID>,
-<CSQ>,<BER>,<ExtPowerSupply>,<ExtPowerVoltage>,<NetworkType>,<BackupBattVolt>,
-<Charging>,<LEDState>,,,<LastFixUTC>,,<AI1>,<AI2>,<AI3>,<DI>,<DO>,
-<TimeZoneOffset>,<DST>,<SendTime>,<CountHex>$
++RESP|+BUFF:GTINF,<ProtocolVersion>,<IMEI>,GV350CEU,<MotionStatus>,<ICCID>,<CSQ>,<BER>,<ExtPowerSupply>,<ExtPowerVoltage>,<NetworkType>,<BackupBattVolt>,<Charging>,<LEDState>,,,<LastFixUTC>,,<AI1>,<AI2>,<AI3>,<DI>,<DO>,<TimeZoneOffset>,<DST>,<SendTime>,<CountHex>$
 
 - Los campos marcados con `,,,` o `,,` indican reservados o no usados.
 - La longitud y el orden pueden variar ligeramente según firmware.
