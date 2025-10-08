@@ -84,7 +84,10 @@ def parse_line(line: str) -> Dict[str, Any]:
     }.get(report)
     if parser is None:
         return {}
-    return parser(line, source=source, device=device)
+    parsed = parser(line, source=source, device=device)
+    if report == "GTINF":
+        return _enrich_gtinf(parsed, source, device)
+    return parsed
 
 
 def parse_gteri(line: str, source: str = "RESP", device: Optional[str] = None) -> Dict[str, Any]:
@@ -99,5 +102,44 @@ def parse_gtinf(line: str, source: str = "RESP", device: Optional[str] = None) -
 
 from .messages.gteri import parse_gteri as _parse_gteri  # noqa: E402
 from .messages.gtinf import parse_gtinf as _parse_gtinf  # noqa: E402
+
+
+def _enrich_gtinf(
+    parsed: Dict[str, Any],
+    source: Optional[str],
+    device: Optional[str],
+) -> Dict[str, Any]:
+    if not parsed:
+        return {}
+
+    enriched: Dict[str, Any] = dict(parsed)
+    enriched["message_family"] = parsed.get("message")
+    enriched["message"] = "GTINF"
+    enriched["report"] = "GTINF"
+
+    if device:
+        normalized_device = device.strip().upper()
+        enriched["device"] = normalized_device
+        enriched.setdefault("device_name", normalized_device)
+        enriched.setdefault("model", normalized_device)
+    else:
+        fallback = str(parsed.get("device_name") or "").upper()
+        if fallback:
+            enriched.setdefault("device", fallback)
+            enriched.setdefault("model", fallback)
+
+    send_time = enriched.get("send_time")
+    if send_time:
+        enriched.setdefault("send_time_raw", send_time)
+
+    protocol_version = enriched.get("full_protocol_version")
+    count_hex = enriched.get("count_hex")
+    _common_enrich(enriched, source, protocol_version, count_hex)
+
+    imei = enriched.get("imei") or parsed.get("imei")
+    if imei:
+        enriched["imei"] = imei
+
+    return enriched
 
 __all__ = ["parse_line", "parse_gteri", "parse_gtinf"]

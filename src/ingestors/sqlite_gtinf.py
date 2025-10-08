@@ -6,9 +6,11 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable, Optional
 
-from queclink.ingestor_sqlite import insert_parsed_record, init_db
+from queclink.ingestor_sqlite import ingest_gtinf_line, insert_parsed_record, init_db
 
 from queclink.parser import parse_line
+
+_GTINF_PREFIXES = ("+RESP:GTINF", "+BUFF:GTINF")
 
 
 def ensure_db(path: str | Path) -> sqlite3.Connection:
@@ -43,6 +45,14 @@ def ingest_lines(
     for raw_line in lines:
         line = raw_line.strip()
         if not line:
+            continue
+
+        header = line.split(",", 1)[0].strip()
+        if header in _GTINF_PREFIXES:
+            if expected_report and expected_report != "GTINF":
+                continue
+            if ingest_gtinf_line(conn, line):
+                inserted += 1
             continue
 
         parsed = parse_line(line)

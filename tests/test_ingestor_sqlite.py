@@ -57,5 +57,5 @@ def test_bulk_ingest_gtinf(tmp_path: Path) -> None:
     )
     inserted = bulk_ingest_from_file(conn, "GV350CEU", "GTINF", gtinf_path)
     assert inserted == 2
-    cur = conn.execute("SELECT COUNT(*) FROM gv350ceu_gtinf")
+    cur = conn.execute("SELECT COUNT(*) FROM gtinf_gv350ceu")
     assert cur.fetchone()[0] == 2

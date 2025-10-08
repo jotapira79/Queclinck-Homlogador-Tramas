@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional
+from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional, Sequence
 
+from .messages.gtinf import parse_gtinf as _parse_gtinf
 from .parser import parse_line
+from .specs.loader import get_spec_path, load_spec_columns_from_path
 
 MODELS = ("GV310LAU", "GV58LAU", "GV350CEU")
 REPORTS = ("GTERI", "GTINF")
@@ -83,6 +87,10 @@ REPORT_SCHEMAS: Mapping[str, Mapping[str, str]] = {
     "GTINF": GTINF_COLUMNS,
 }
 
+_GTINF_HEADERS = {"+RESP:GTINF", "+BUFF:GTINF"}
+
+_LOGGER = logging.getLogger(__name__)
+
 
 def _table_name(model: str, report: str) -> str:
     return f"{model.strip().lower()}_{report.strip().lower()}"
@@ -116,6 +124,96 @@ def _ensure_columns(
         col_type = _column_type(report, column)
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
     conn.commit()
+
+
+def _normalize_spec_path(spec_path: str | Path) -> str:
+    return str(Path(spec_path))
+
+
+@lru_cache(maxsize=64)
+def _columns_from_spec(spec_path: str | Path) -> Sequence[str]:
+    return tuple(load_spec_columns_from_path(spec_path))
+
+
+def ensure_table_from_spec(
+    conn: sqlite3.Connection,
+    table: str,
+    spec_path: str | Path,
+) -> Sequence[str]:
+    """Crear una tabla con columnas basadas en una spec YAML si no existe."""
+
+    normalized = _normalize_spec_path(spec_path)
+    columns = _columns_from_spec(normalized)
+    if not columns:
+        raise ValueError(f"La spec {normalized} no define columnas")
+
+    column_defs = ", ".join(f'"{column}" TEXT' for column in columns)
+    conn.execute(f"CREATE TABLE IF NOT EXISTS {table} ({column_defs})")
+    conn.commit()
+    return columns
+
+
+def insert_row_from_spec(
+    conn: sqlite3.Connection,
+    table: str,
+    spec_path: str | Path,
+    row: Mapping[str, Any],
+) -> Optional[int]:
+    """Insertar una fila respetando el orden de columnas definido en una spec."""
+
+    columns = ensure_table_from_spec(conn, table, spec_path)
+    placeholders = ", ".join("?" for _ in columns)
+    values = [row.get(column) for column in columns]
+    cursor = conn.execute(
+        f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",
+        values,
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def _split_payload(line: str) -> list[str]:
+    payload = line.strip()
+    if payload.endswith("$"):
+        payload = payload[:-1]
+    return payload.split(",") if payload else []
+
+
+def ingest_gtinf_line(conn: sqlite3.Connection, line: str) -> bool:
+    """Procesar e insertar una trama GTINF basada en su spec específica."""
+
+    parts = _split_payload(line)
+    if not parts:
+        return False
+
+    header = parts[0].strip()
+    if header not in _GTINF_HEADERS:
+        return False
+
+    if len(parts) < 4:
+        _LOGGER.warning("Trama GTINF sin 4º campo para modelo: %s", line)
+        return False
+
+    device = parts[3].strip()
+    if not device:
+        _LOGGER.warning("No se pudo determinar el modelo GTINF en la trama: %s", line)
+        return False
+
+    spec_path = get_spec_path("GTINF", device)
+    spec_file = Path(spec_path)
+    if not spec_file.exists():
+        _LOGGER.warning(
+            "No se encontró spec para GTINF del modelo %s en %s", device, spec_path
+        )
+        return False
+
+    row = _parse_gtinf(line, device=device)
+    if not row:
+        return False
+
+    table = f"gtinf_{device.strip().lower()}"
+    insert_row_from_spec(conn, table, spec_file, row)
+    return True
 
 
 def init_db(path: str | Path) -> sqlite3.Connection:
@@ -229,12 +327,22 @@ def bulk_ingest_from_file(
             raw_line = raw_line.strip()
             if not raw_line:
                 continue
+            if normalized_report == "GTINF":
+                if ingest_gtinf_line(conn, raw_line):
+                    inserted += 1
+                continue
+
             parsed = parse_line(raw_line)
             if not parsed:
                 continue
             record: Dict[str, Any] = dict(parsed)
             record.setdefault("raw_line", raw_line)
-            if insert_parsed_record(conn, normalized_model, normalized_report, record) is not None:
+            if (
+                insert_parsed_record(
+                    conn, normalized_model, normalized_report, record
+                )
+                is not None
+            ):
                 inserted += 1
     return inserted
 
