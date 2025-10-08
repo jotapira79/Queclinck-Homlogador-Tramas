@@ -1,13 +1,21 @@
 # +RESP/+BUFF:GTINF — GV350CEU
 
-
 ## Descripción
-Reporte informativo del dispositivo para la serie GV350. Prefijos `+RESP`/`+BUFF`.
-- Versión de protocolo (GV350CEU): **6 hex** (p.ej. `74040A`).
+Reporte informativo del dispositivo (serie GV350). Prefijos `+RESP`/`+BUFF`.
+- **Versión de protocolo (GV350CEU):** 6 hex (p. ej., `74040A`, `740904`).
 - Suele incluir dos timestamps y máscaras de IO.
 
+## Estructura (resumen práctico)
+`+RESP|+BUFF:GTINF,<PROTO_VER>,<IMEI>,GV350CEU,<ReportType>,<ICCID>,<Network>,<Roaming>,<SIM>,<Mileage>,<Band?>,<ExtPwr_V>,<ServiceStatus>,<...>,<UTC1>,...,<IOmask1>,<IOmask2>,<TZ>,<DST>,<SendTime>,<CountHex>$`
 
-## Ejemplos reales (proporcionados)
+> Los nombres intermedios varían por firmware; lo relevante para el parser:
+> - `PROTO_VER` (6 hex)
+> - `IMEI` (15 dígitos)
+> - `DeviceName` = `GV350CEU`
+> - **`SendTime`**: último timestamp de 14 dígitos → `send_time_iso`
+> - **`CountHex`**: normalizar a **MAYÚSCULAS**
+
+## Ejemplos reales
 
 **RESP**
 +RESP:GTINF,74040A,862524060748775,GV350CEU,11,89999112400719062394,37,0,1,13074,,4.19,0,1,,,20251007213710,,0,0,0,00,00,+0000,0,20251007213751,6B91$
@@ -16,6 +24,7 @@ Reporte informativo del dispositivo para la serie GV350. Prefijos `+RESP`/`+BUFF
 +RESP:GTINF,740904,862524060869597,GV350CEU,11,8935711001092192068f,40,0,1,12592,3,4.14,0,1,,,20251008010712,,0,0,0,10,00,+0000,0,20251008010944,2816$
 +RESP:GTINF,74040A,862524060748775,GV350CEU,11,89999112400719062394,38,0,1,12917,,4.19,0,1,,,20251008023706,,0,0,0,00,00,+0000,0,20251008023753,6CE0$
 
+
 **BUFF**
 +BUFF:GTINF,740904,862524060867948,GV350CEU,11,8935711001088072837f,69,0,1,12992,3,4.15,0,1,,,20251008120817,,0,0,0,10,02,+0000,0,20251008121018,59E7$
 +BUFF:GTINF,740904,862524060867948,GV350CEU,22,8935711001088072837f,41,0,1,14037,3,4.16,0,1,,,20251008111017,,0,0,0,11,02,+0000,0,20251008111018,5901$
@@ -23,7 +32,12 @@ Reporte informativo del dispositivo para la serie GV350. Prefijos `+RESP`/`+BUFF
 +BUFF:GTINF,740904,862524060876527,GV350CEU,11,8935711001088072340f,6,0,1,26137,1,4.10,0,1,,,20251008042911,,0,0,0,10,00,+0000,0,20251008042911,3B28$
 +BUFF:GTINF,740904,862524060876527,GV350CEU,11,8935711001088072340f,4,0,1,25127,0,4.10,0,1,,,20251008032812,,0,0,0,10,00,+0000,0,20251008032911,3AA3$
 
-## Notas de parsing
-- `protocol_version`: 6 hex.
-- Detectar `source` RESP/BUFF.
-- Convertir numéricos; normalizar timestamps a ISO‑8601 si se expone.
+
+
+## Reglas de parsing (resumen)
+- `protocol_version`: 6 hex (`upper()`).
+- `source`: detectar por prefijo `+RESP:` o `+BUFF:`.
+- `imei`: 15 dígitos.
+- `iccid`: **texto** (puede traer letras `a–f`).
+- `count_hex`: **upper()**.
+- `send_time_iso`: usar **el último** timestamp de 14 dígitos si está presente.
