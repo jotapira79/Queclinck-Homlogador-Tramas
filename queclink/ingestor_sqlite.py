@@ -141,7 +141,24 @@ def init_db(path: str | Path) -> sqlite3.Connection:
                 f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(column_defs)})"
             )
     conn.commit()
+    _create_telemetry_view(conn)
     return conn
+
+
+def _create_telemetry_view(conn: sqlite3.Connection) -> None:
+    """Crear una vista unificada con las columnas base de todas las tablas."""
+
+    base_columns = list(BASE_COLUMNS.keys())
+    column_list = ", ".join(base_columns)
+    selects: list[str] = []
+    for model in MODELS:
+        for report in REPORTS:
+            table = _table_name(model, report)
+            selects.append(f"SELECT {column_list} FROM {table}")
+    union_sql = " UNION ALL ".join(selects)
+    conn.execute("DROP VIEW IF EXISTS telemetry_messages")
+    conn.execute(f"CREATE VIEW telemetry_messages AS {union_sql}")
+    conn.commit()
 
 
 def _normalize_value(value: Any) -> Any:
