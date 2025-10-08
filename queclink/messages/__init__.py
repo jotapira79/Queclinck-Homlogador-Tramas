@@ -1,5 +1,6 @@
-# Subpaquete para mensajes individuales de Queclink.
-"""Colección de analizadores específicos por tipo de mensaje."""
+"""Analizadores específicos por tipo de mensaje."""
+
+from __future__ import annotations
 
 from .gteri import parse_gteri
 from .gtinf import parse_gtinf
