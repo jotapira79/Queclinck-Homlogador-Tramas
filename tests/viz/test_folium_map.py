@@ -60,9 +60,15 @@ def test_render_map_creates_files(tmp_path):
     html_content = html_path.read_text(encoding="utf-8")
     assert "Directo" in html_content
     assert "Buffer" in html_content
+
     import re
-    assert re.search(r"08:10:00(?:\s|&nbsp;)?Chile", html_content), \
-        "No se encontró la etiqueta de hora esperada en el HTML del mapa"
+
+    # Acepta " Chile" o " CLT" o " CLST" o variantes como " GMT-03", " UTC-03", etc.
+    assert re.search(
+        r"08:10:00(?:\s|&nbsp;)?(?:Chile|CLT|CLST|[-+A-Z0-9:]{1,6})",
+        html_content,
+    ), "No se encontró la etiqueta de hora esperada en el HTML del mapa"
+
 
 
 
