@@ -1,25 +1,26 @@
-# Cargador auxiliar para especificaciones de mensajes Queclink.
-"""Funciones utilitarias para obtener definiciones estructuradas de mensajes."""
+"""Utilidades para localizar especificaciones de mensajes Queclink."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict
 
-_SPEC_CACHE: Dict[str, Dict[str, Any]] = {}
+
+def get_spec_path(report: str, device: str) -> str:
+    """Devolver la ruta relativa al archivo de especificación."""
+    if not report or not device:
+        raise ValueError("Se requieren el nombre del reporte y del dispositivo")
+    report_norm = report.strip().lower()
+    device_norm = device.strip().lower()
+    if not report_norm or not device_norm:
+        raise ValueError("Los parámetros report y device no pueden ser vacíos")
+    return str(Path("spec") / device_norm / f"{report_norm}.yml")
 
 
-def load_spec(name: str) -> Dict[str, Any]:
-    """Cargar una especificación de mensaje por nombre.
+def load_yaml(path: str) -> Dict[str, Any]:
+    """Cargar un archivo YAML de especificación."""
+    # TODO: implementar carga real cuando se definan validaciones
+    raise NotImplementedError("TODO: implementar lectura de YAML de especificaciones")
 
-    Por ahora es un marcador de posición que devuelve un diccionario vacío y
-    permite agregar la lógica real en iteraciones futuras.
-    """
 
-    normalized = name.strip().lower()
-    if not normalized:
-        raise ValueError("El nombre de la especificación no puede estar vacío")
-    if normalized not in _SPEC_CACHE:
-        # Placeholder: en el futuro se podrían leer archivos JSON/YAML.
-        _SPEC_CACHE[normalized] = {"name": normalized, "source": None, "path": Path()}
-    return dict(_SPEC_CACHE[normalized])
+__all__ = ["get_spec_path", "load_yaml"]
