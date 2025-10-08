@@ -13,11 +13,17 @@ Se envía periódicamente cuando la función está habilitada por el comando:
 
 
 
-### Estructura general
-+RESP|+BUFF:GTINF,<ProtocolVersion>,<IMEI>,GV350CEU,<MotionStatus>,<ICCID>,<CSQ>,<BER>,<ExtPowerSupply>,<ExtPowerVoltage>,<NetworkType>,<BackupBattVolt>,<Charging>,<LEDState>,,,<LastFixUTC>,,<AI1>,<AI2>,<AI3>,<DI>,<DO>,<TimeZoneOffset>,<DST>,<SendTime>,<CountHex>$
+### 🧩 Estructura general
 
-- Los campos marcados con `,,,` o `,,` indican reservados o no usados.
+```text
++RESP|+BUFF:GTINF,<ProtocolVersion>,<IMEI>,<DeviceName>,<MotionStatus>,<ICCID>,
+<CSQ>,<BER>,<ExtPowerSupply>,<ExtPowerVoltage>,<NetworkType>,<BackupBattVolt>,
+<Charging>,<LEDState>,,,<LastFixUTC>,,<AI1>,<AI2>,<AI3>,<DI>,<DO>,
+<TimeZoneOffset>,<DST>,<SendTime>,<CountHex>$
+
+- Los campos marcados con ,,, o ,, indican reservados o no usados.
 - La longitud y el orden pueden variar ligeramente según firmware.
+- Los prefijos +RESP: o +BUFF: indican si el mensaje es en tiempo real o almacenado en buffer.
 
 ---
 
@@ -39,8 +45,6 @@ Se envía periódicamente cuando la función está habilitada por el comando:
 +BUFF:GTINF,740904,862524060876527,GV350CEU,11,8935711001088072340f,4,0,1,25127,0,4.10,0,1,,,20251008032812,,0,0,0,10,00,+0000,0,20251008032911,3AA3$
 
 ---
-
-## 3️⃣ Campos principales
 
 ## 3️⃣ Campos principales
 
