@@ -64,10 +64,9 @@ class SQLiteIngestor:
         columns = [field.name for field in fields]
         placeholders = ", ".join(["?"] * len(columns))
         values = [_normalize_value(record.get(column)) for column in columns]
-        self.connection.execute(
-            f"INSERT INTO {table} ({', '.join(f'"{col}"' for col in columns)}) VALUES ({placeholders})",
-            values,
-        )
+        column_names = ", ".join(f'"{col}"' for col in columns)
+        sql = f"INSERT INTO {table} ({column_names}) VALUES ({placeholders})"
+        self.connection.execute(sql, values)
         self.connection.commit()
 
     def _table_columns(self, table: str) -> set[str]:
