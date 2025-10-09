@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from ..parser import _common_enrich, _split, _to_iso
 from ..specs.loader import get_spec_path
@@ -43,61 +42,69 @@ def _safe_int(value: Any, base: int = 10) -> Optional[int]:
 @dataclass
 class _CommonERI:
     prefix: str
+    message: str
     is_buff: int
     full_protocol_version: str
     imei: str
     device_name: str
     eri_mask: Optional[str]
-    ext_power_mv: Optional[int]
+    external_power_mv: Optional[int]
     report_type: Optional[str]
     number: Optional[int]
-    gnss_acc: Optional[float]
+    gnss_accuracy_level: Optional[float]
     speed_kmh: Optional[float]
     azimuth_deg: Optional[int]
     altitude_m: Optional[float]
-    lon: Optional[float]
-    lat: Optional[float]
-    gnss_utc: Optional[str]
+    longitude_deg: Optional[float]
+    latitude_deg: Optional[float]
+    gnss_utc_time: Optional[str]
     mcc: Optional[str]
     mnc: Optional[str]
     lac: Optional[str]
     cell_id: Optional[str]
-    pos_append_mask: Optional[str]
-    raw_after_pam: str
+    position_append_mask: Optional[str]
+    raw_after_mask: str
     send_time: Optional[str]
     count_hex: Optional[str]
 
 
-def _parse_common_prefix(fields: List[str]) -> tuple[_CommonERI, int]:
+def _parse_common_prefix(fields: List[str]) -> Tuple[_CommonERI, int]:
     prefix = fields[0].strip()
+    message = "GTERI"
     is_buff = 1 if prefix.startswith("+BUFF") else 0
 
     def get(idx: int) -> Optional[str]:
-        return fields[idx].strip() if idx < len(fields) and fields[idx] != "" else None
+        if idx >= len(fields):
+            return None
+        value = fields[idx]
+        if value == "":
+            return None
+        return value.strip()
 
     ce = _CommonERI(
         prefix=prefix,
+        message=message,
         is_buff=is_buff,
         full_protocol_version=get(1) or "",
         imei=get(2) or "",
-        device_name=get(3) or "",
+        device_name=(get(3) or "").upper(),
         eri_mask=get(4),
-        ext_power_mv=_safe_int(get(5)) if get(5) else None,
+        external_power_mv=_safe_int(get(5)) if get(5) else None,
         report_type=get(6),
         number=_safe_int(get(7)) if get(7) else None,
-        gnss_acc=_safe_float(get(8)) if get(8) else None,
+        gnss_accuracy_level=_safe_float(get(8)) if get(8) else None,
         speed_kmh=_safe_float(get(9)) if get(9) else None,
         azimuth_deg=_safe_int(get(10)) if get(10) else None,
         altitude_m=_safe_float(get(11)) if get(11) else None,
-        lon=_safe_float(get(12)) if get(12) else None,
-        lat=_safe_float(get(13)) if get(13) else None,
-        gnss_utc=get(14),
+        longitude_deg=_safe_float(get(12)) if get(12) else None,
+        latitude_deg=_safe_float(get(13)) if get(13) else None,
+        gnss_utc_time=get(14),
         mcc=get(15),
         mnc=get(16),
         lac=get(17),
         cell_id=get(18),
-        pos_append_mask=get(19),
-        raw_after_pam="",
+        position_append_mask=get(19),
+        raw_after_mask="",
         send_time=None,
         count_hex=None,
     )
@@ -114,6 +121,142 @@ def _extract_tail(fields: List[str]) -> tuple[Optional[str], Optional[str]]:
     return send_time, count_hex
 
 
+def _mask_value(raw: Optional[str]) -> Optional[int]:
+    if not raw:
+        return None
+    try:
+        return int(raw, 16)
+    except ValueError:
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+
+
+def _ble_append_fields(mask_raw: Optional[str], tokens: Iterable[Optional[str]]) -> Tuple[Dict[str, Any], int]:
+    """Parsear campos opcionales de un accesorio BLE según la append mask."""
+
+    mask_value = _mask_value(mask_raw) or 0
+    values_iter = iter(tokens)
+    consumed = 0
+    optional_fields: Dict[str, Any] = {}
+    known_names: Dict[int, str] = {
+        0: "name",
+        1: "mac",
+        2: "status",
+        3: "battery_mv",
+        4: "temp_c",
+        5: "humidity_pct",
+        6: "reserved",
+        7: "accessory_io",
+        8: "event",
+        9: "tire_pressure_kpa",
+        10: "timestamp",
+        11: "enhanced_temp_c",
+        12: "magnet_data",
+        13: "battery_pct",
+        14: "relay_state",
+    }
+
+    bit_values: List[Dict[str, Any]] = []
+    for bit in range(32):
+        if mask_value & (1 << bit):
+            raw_value = next(values_iter, None)
+            consumed += 1 if raw_value is not None else 0
+            key = known_names.get(bit, f"bit_{bit}")
+            value = raw_value.strip() if isinstance(raw_value, str) else raw_value
+            optional_fields[key] = value
+            bit_values.append({"bit": bit, "key": key, "value": value})
+
+    if bit_values:
+        optional_fields["_raw_fields"] = bit_values
+
+    return optional_fields, consumed
+
+
+def _parse_ble_block(tokens: List[Optional[str]], cursor: int) -> Tuple[Optional[Dict[str, Any]], int]:
+    if cursor >= len(tokens):
+        return None, cursor
+
+    accessory_number = _safe_int(tokens[cursor])
+    cursor += 1
+    if accessory_number is None or accessory_number < 0:
+        return None, cursor
+
+    items: List[Dict[str, Any]] = []
+    for _ in range(accessory_number):
+        if cursor >= len(tokens):
+            break
+        index = (tokens[cursor] or "").strip()
+        cursor += 1
+        if cursor >= len(tokens):
+            break
+        accessory_type = _safe_int(tokens[cursor])
+        cursor += 1
+        if cursor >= len(tokens):
+            break
+        model_or_beacon = _safe_int(tokens[cursor])
+        cursor += 1
+        raw_data = tokens[cursor] if cursor < len(tokens) else None
+        cursor += 1
+        append_mask = tokens[cursor] if cursor < len(tokens) else None
+        cursor += 1
+
+        item: Dict[str, Any] = {
+            "index": index,
+            "accessory_type": accessory_type,
+            "model_or_beacon_id_model": model_or_beacon,
+            "raw_data": raw_data.strip() if isinstance(raw_data, str) else raw_data,
+            "append_mask": append_mask.strip() if isinstance(append_mask, str) else append_mask,
+        }
+
+        remaining = tokens[cursor:]
+        optional, consumed = _ble_append_fields(append_mask, remaining)
+        if optional:
+            item.update(optional)
+        cursor += consumed
+        items.append(item)
+
+    return {"accessory_number": accessory_number, "items": items}, cursor
+
+
+def _parse_rf433_block(tokens: List[Optional[str]], cursor: int) -> Tuple[Optional[Dict[str, Any]], int]:
+    if cursor >= len(tokens):
+        return None, cursor
+
+    accessory_number = _safe_int(tokens[cursor])
+    cursor += 1
+    if accessory_number is None or accessory_number < 0:
+        return None, cursor
+
+    accessories: List[Dict[str, Any]] = []
+    for _ in range(accessory_number):
+        if cursor >= len(tokens):
+            break
+        serial = (tokens[cursor] or "").strip()
+        cursor += 1
+        if cursor >= len(tokens):
+            break
+        acc_type = _safe_int(tokens[cursor])
+        cursor += 1
+        temperature = _safe_int(tokens[cursor]) if cursor < len(tokens) else None
+        cursor += 1 if cursor < len(tokens) else 0
+        humidity: Optional[int] = None
+        if acc_type == 2 and cursor < len(tokens):
+            humidity = _safe_int(tokens[cursor])
+            cursor += 1
+        accessories.append(
+            {
+                "serial": serial or None,
+                "type": acc_type,
+                "temperature_c": temperature,
+                "humidity_pct": humidity,
+            }
+        )
+
+    return {"accessory_number": accessory_number, "accessories": accessories}, cursor
+
+
 def _parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict[str, Any]:
     remaining = fields[start_idx:-2] if len(fields) >= (start_idx + 2) else fields[start_idx:]
     out: Dict[str, Any] = {}
@@ -121,19 +264,8 @@ def _parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dic
     def looks_like_hourmeter(candidate: Optional[str]) -> bool:
         return bool(re.fullmatch(r"\d{1,7}:\d{2}:\d{2}", candidate or ""))
 
-    def to_mask_value(val: Optional[str]) -> Optional[int]:
-        if not val:
-            return None
-        try:
-            return int(val, 16)
-        except ValueError:
-            try:
-                return int(val)
-            except ValueError:
-                return None
-
-    mask_value = to_mask_value(fields[start_idx - 1] if start_idx - 1 < len(fields) else None)
-    eri_mask_value = to_mask_value(fields[4] if len(fields) > 4 else None)
+    mask_value = _mask_value(fields[start_idx - 1] if start_idx - 1 < len(fields) else None)
+    eri_mask_value = _mask_value(fields[4] if len(fields) > 4 else None)
 
     def mask_has(bit: int) -> bool:
         return mask_value is not None and (mask_value & bit) != 0
@@ -142,12 +274,13 @@ def _parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dic
     if cursor < len(remaining):
         raw_sat = remaining[cursor]
         if mask_has(0x01):
-            out["satellites"] = _safe_int(raw_sat) if (raw_sat or "") != "" else None
+            out["sats_in_use"] = _safe_int(raw_sat) if (raw_sat or "") != "" else None
             cursor += 1
         elif (raw_sat or "") != "" and re.fullmatch(r"\d{1,2}", raw_sat or ""):
-            out["satellites"] = _safe_int(raw_sat)
+            out["sats_in_use"] = _safe_int(raw_sat)
             cursor += 1
 
+    dop_keys = ["hdop", "vdop", "pdop"]
     dop_values: List[Optional[float]] = []
     dop_pattern = r"\d{1,2}(?:\.\d{1,2})?"
     for idx in range(3):
@@ -171,13 +304,9 @@ def _parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dic
             continue
         break
 
-    if dop_values:
-        if len(dop_values) > 0:
-            out["dop1"] = dop_values[0]
-        if len(dop_values) > 1:
-            out["dop2"] = dop_values[1]
-        if len(dop_values) > 2:
-            out["dop3"] = dop_values[2]
+    for idx, value in enumerate(dop_values):
+        if idx < len(dop_keys):
+            out[dop_keys[idx]] = value
     else:
         if cursor < len(remaining) and re.fullmatch(r"\d", remaining[cursor] or ""):
             out["gnss_trigger_type"] = _safe_int(remaining[cursor])
@@ -286,10 +415,10 @@ def _parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dic
         if raw_val is not None:
             raw_int = int(round(raw_val))
             clamped = max(0, min(100, raw_int))
-            out["backup_batt_pct_raw"] = raw_val
+            out["backup_battery_pct_raw"] = raw_val
             if clamped != raw_int:
-                add_warning("backup_batt_pct_clamped")
-            out["backup_batt_pct"] = clamped
+                add_warning("backup_battery_pct_clamped")
+            out["backup_battery_pct"] = clamped
             cursor += 1
 
     skip_empty_values()
@@ -330,50 +459,56 @@ def _parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dic
         cursor += 1
 
     skip_empty_values()
-    if (
-        eri_mask_value is not None
-        and (eri_mask_value & 0x01) != 0
-        and "uart_device_type" in out
-        and cursor < len(remaining)
-    ):
+    if eri_mask_value is not None and cursor < len(remaining):
         dfs_items: List[str] = []
-        dfs_truncated = False
+        if (eri_mask_value & 0x01) != 0:
+            while cursor < len(remaining):
+                token = remaining[cursor]
+                if token is None or token.strip() == "":
+                    break
+                upper = token.strip().upper()
+                if upper in {"TMPS", "RF433", "RF433B", "BLE", "CAN", "1WIRE"}:
+                    break
+                token_str = token.strip()
+                if dfs_items:
+                    if token_str.isdigit() and len(token_str) <= 2:
+                        break
+                    if re.fullmatch(r"\d{4,}", token_str):
+                        break
+                    if re.fullmatch(r"[0-9A-F]{8,}", upper):
+                        break
+                dfs_items.append(token)
+                cursor += 1
+            if dfs_items:
+                out["digital_fuel_sensor_data"] = (
+                    dfs_items[0] if len(dfs_items) == 1 else "|".join(dfs_items)
+                )
+                out["digital_fuel_sensor_data_items"] = dfs_items
 
-        def should_stop(token: Optional[str], has_items: bool) -> bool:
-            if token is None:
-                return True
-            token_str = (token or "").strip()
-            if token_str == "":
-                return True
-            upper = token_str.upper()
-            if upper in {"TMPS", "RF433", "RF433B", "BLE", "CAN", "1WIRE"}:
-                return True
-            if has_items and token_str.isdigit() and len(token_str) <= 2:
-                return True
-            if has_items and re.fullmatch(r"\d{4,}", token_str):
-                return True
-            if has_items and re.fullmatch(r"[0-9A-F]{8,}", upper):
-                return True
-            return False
+        skip_empty_values()
 
-        while cursor < len(remaining):
-            token = remaining[cursor]
-            if should_stop(token, bool(dfs_items)):
-                break
-            if len(dfs_items) < 20:
-                dfs_items.append(token or "")
-            else:
-                dfs_truncated = True
+    rf433_block: Optional[Dict[str, Any]] = None
+    if cursor < len(remaining):
+        peek = (remaining[cursor] or "").strip().upper()
+        if peek in {"RF433", "RF433B"}:
             cursor += 1
-        if dfs_items:
-            out["digital_fuel_sensor_data"] = dfs_items[0] if len(dfs_items) == 1 else "|".join(dfs_items)
-            out["dfs_raw_list"] = json.dumps(dfs_items, ensure_ascii=False)
-            out["dfs_count"] = len(dfs_items)
-        if dfs_truncated:
-            add_warning("digital_fuel_sensor_data_truncated")
+            rf433_block, cursor = _parse_rf433_block(remaining, cursor)
+            skip_empty_values()
 
-    skip_empty_values()
-    out["remaining_blob"] = ",".join(remaining[cursor:])
+    ble_block: Optional[Dict[str, Any]] = None
+    if cursor < len(remaining):
+        peek = (remaining[cursor] or "").strip().upper()
+        if peek == "BLE":
+            cursor += 1
+        ble_block, cursor = _parse_ble_block(remaining, cursor)
+        skip_empty_values()
+
+    if rf433_block:
+        out["rf433_block"] = rf433_block
+    if ble_block:
+        out["ble_block"] = ble_block
+
+    out["remaining_blob"] = ",".join(value or "" for value in remaining[cursor:])
     return out
 
 
@@ -388,12 +523,12 @@ def _parse_line_to_record(line: str) -> Optional[Dict[str, Any]]:
     send_time, count_hex = _extract_tail(fields)
     ce.send_time, ce.count_hex = send_time, count_hex
     model_data = _parse_model_specific(ce.device_name, fields, nxt)
-    ce.raw_after_pam = model_data.pop("remaining_blob", "")
+    ce.raw_after_mask = model_data.pop("remaining_blob", "")
     base = asdict(ce)
     base.update(model_data)
     base["version"] = base.pop("full_protocol_version")
     base["count_dec"] = _safe_int(base.get("count_hex"), 16) if base.get("count_hex") else None
-    base["model"] = ce.device_name.upper()
+    base["model"] = ce.device_name
     warnings = base.get("validation_warnings")
     if warnings:
         if not isinstance(warnings, list):
@@ -405,24 +540,6 @@ def _parse_line_to_record(line: str) -> Optional[Dict[str, Any]]:
         base["validation_warnings"] = []
 
     for key in {
-        "analog_in_1_raw",
-        "analog_in_1_mv",
-        "analog_in_1_pct",
-        "analog_in_2_raw",
-        "analog_in_2_mv",
-        "analog_in_2_pct",
-        "analog_in_3_raw",
-        "analog_in_3_mv",
-        "analog_in_3_pct",
-        "dfs_raw_list",
-        "dfs_count",
-        "backup_batt_pct",
-        "backup_batt_pct_raw",
-        "device_status_raw",
-        "device_status_len_bits",
-        "device_status_hi",
-        "device_status_lo",
-        "uart_device_type_label",
         "remaining_blob",
         "lat_lon_valid",
         "validation_warning",
@@ -441,6 +558,7 @@ def parse_gteri(line: str, source: str = "RESP", device: Optional[str] = None) -
     data = dict(base)
     header = data.get("prefix")
     data["header"] = header
+    data.setdefault("message", "GTERI")
 
     detected_source: Optional[str] = None
     if isinstance(header, str):
@@ -453,30 +571,39 @@ def parse_gteri(line: str, source: str = "RESP", device: Optional[str] = None) -
     if device_from_record:
         data["device"] = str(device_from_record).upper()
 
-    if data.get("gnss_utc"):
-        data["utc"] = _to_iso(data["gnss_utc"]) or data["gnss_utc"]
+    if data.get("gnss_utc_time"):
+        data["gnss_utc"] = data["gnss_utc_time"]
+        data["utc"] = _to_iso(data["gnss_utc_time"]) or data["gnss_utc_time"]
 
     send_time_raw = data.get("send_time")
     if send_time_raw:
         data["send_time_raw"] = send_time_raw
         data["send_time"] = _to_iso(send_time_raw) or send_time_raw
 
-    data["sats"] = data.get("satellites")
-
-    dop_candidate = data.get("dop1")
-    if dop_candidate is None:
-        for key in ("dop2", "dop3"):
-            val = data.get(key)
-            if val is not None:
-                dop_candidate = val
+    data["sats"] = data.get("sats_in_use")
+    data.setdefault("pos_append_mask", data.get("position_append_mask"))
+    data.setdefault("gnss_acc", data.get("gnss_accuracy_level"))
+    data.setdefault("lon", data.get("longitude_deg"))
+    data.setdefault("lat", data.get("latitude_deg"))
+    data.setdefault("backup_batt_pct", data.get("backup_battery_pct"))
+    data.setdefault("ext_power_mv", data.get("external_power_mv"))
+    if data.get("hdop") is None:
+        for candidate_key in ("vdop", "pdop"):
+            value = data.get(candidate_key)
+            if value is not None:
+                data["hdop"] = value
                 break
-    if dop_candidate is not None:
-        data["hdop"] = dop_candidate
+    if data.get("hdop") is not None:
+        data.setdefault("dop1", data.get("hdop"))
+    if data.get("vdop") is not None:
+        data.setdefault("dop2", data.get("vdop"))
+    if data.get("pdop") is not None:
+        data.setdefault("dop3", data.get("pdop"))
 
     if isinstance(data.get("device_status"), str):
         data["device_status"] = data["device_status"].upper()
 
-    mask_lower = str(data.get("pos_append_mask", "")).lower()
+    mask_lower = str(data.get("position_append_mask", "") or data.get("pos_append_mask", "")).lower()
     if mask_lower in {"00", "0"}:
         data.setdefault("gnss_fix", False)
         data.setdefault("is_last_fix", True)

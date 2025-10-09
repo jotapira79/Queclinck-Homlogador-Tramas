@@ -125,16 +125,17 @@ def test_parse_gteri_campos_basicos():
     assert d.get("device") == "GV310LAU"
 
     # Coordenadas y tiempo
-    assert pytest.approx(d.get("lon"), rel=1e-6) == 117.129356
-    assert pytest.approx(d.get("lat"), rel=1e-6) == 31.839248
+    assert pytest.approx(d.get("longitude_deg"), rel=1e-6) == 117.129356
+    assert pytest.approx(d.get("latitude_deg"), rel=1e-6) == 31.839248
     # UTC normalizado (ISO‑8601). Si tu implementación usa clave distinta, ajusta aquí.
     assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", d.get("utc", ""))
 
     # Máscaras y opcionales
-    assert d.get("pos_append_mask", "").lower() in {"03", 3, "3"}
-    assert d.get("sats") == 15
-    # HDOP presente y > 0 en esta muestra
-    assert d.get("hdop") in (4.0, 4, "4.0", "4")
+    mask = str(d.get("position_append_mask") or d.get("pos_append_mask") or "").lower()
+    assert mask in {"03", "3"}
+    assert d.get("sats_in_use") == 15
+    # HDOP detectado y normalizado
+    assert float(d.get("hdop") or 0) == pytest.approx(4.0)
 
     # Odómetro y horómetro
     assert isinstance(d.get("mileage_km"), (int, float))
@@ -144,13 +145,18 @@ def test_parse_gteri_campos_basicos():
     assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", d.get("send_time", ""))
     assert re.match(r"^[0-9A-Fa-f]{4}$", d.get("count_hex", ""))
 
+    # Bloques ERI normalizados
+    ble = d.get("ble_block") or {}
+    assert ble.get("accessory_number") == 1
+    assert ble.get("items") and isinstance(ble["items"], list)
+
 
 def test_semantica_hdop_sin_fix():
     d = parse_gteri(RAW_HDOP0)
 
     # Mask 00 => no deberían venir campos anexos de posición (sats/hdop/vdop/pdop)
-    assert d.get("pos_append_mask", "").lower() in {"00", 0, "0"}
-    assert d.get("sats") in (None, 0)  # puede no existir o venir como 0
+    assert str(d.get("position_append_mask") or d.get("pos_append_mask") or "").lower() in {"00", "0"}
+    assert d.get("sats_in_use") in (None, 0)
 
     # HDOP = 0 => sin fix GNSS (banderas esperadas)
     # La especificación sugiere exponer esto; si usas otra clave, ajusta aquí.
@@ -161,11 +167,11 @@ def test_semantica_hdop_sin_fix():
     "raw, must_keys",
     [
         (RAW_OK, [
-            "imei", "device", "lon", "lat", "utc", "mcc", "mnc", "lac", "cell_id",
+            "imei", "device", "longitude_deg", "latitude_deg", "gnss_utc_time", "mcc", "mnc", "lac", "cell_id",
             "mileage_km", "hour_meter", "send_time", "count_hex"
         ]),
         (RAW_HDOP0, [
-            "imei", "device", "lon", "lat", "utc", "mcc", "mnc", "lac", "cell_id",
+            "imei", "device", "longitude_deg", "latitude_deg", "gnss_utc_time", "mcc", "mnc", "lac", "cell_id",
             "mileage_km", "hour_meter", "send_time", "count_hex"
         ]),
     ],
@@ -178,9 +184,9 @@ def test_claves_minimas_presentes(raw, must_keys):
 
 def test_rangos_basicos():
     d = parse_gteri(RAW_OK)
-    assert -90 <= d.get("lat") <= 90
-    assert -180 <= d.get("lon") <= 180
-    assert "backup_batt_pct" not in d
+    assert -90 <= d.get("latitude_deg") <= 90
+    assert -180 <= d.get("longitude_deg") <= 180
+    assert d.get("backup_battery_pct") == d.get("backup_batt_pct") == 100
 
 
 def test_valida_hour_meter_formato():
@@ -195,26 +201,15 @@ def test_campos_post_dop_no_se_desplazan():
     assert d.get("mileage_km") == pytest.approx(14549.0)
     assert d.get("hour_meter") == "0000102:34:33"
     assert d.get("analog_in_1") == 42
+    assert d.get("analog_in_1_raw") == "42"
+    assert d.get("analog_in_1_mv") == 42
     assert d.get("analog_in_2") == 11172
+    assert d.get("analog_in_2_raw") == "11172"
+    assert d.get("analog_in_2_mv") == 11172
     assert d.get("analog_in_3") is None
+    assert d.get("analog_in_3_raw") in (None, "")
     assert str(d.get("device_status", "")).upper() == "210000"
-    assert "analog_in_1_raw" not in d
-    assert "analog_in_1_mv" not in d
-    assert "analog_in_1_pct" not in d
-    assert "analog_in_2_raw" not in d
-    assert "analog_in_2_mv" not in d
-    assert "analog_in_2_pct" not in d
-    assert "analog_in_3_raw" not in d
-    assert "analog_in_3_mv" not in d
-    assert "analog_in_3_pct" not in d
-    assert "backup_batt_pct" not in d
-    assert "backup_batt_pct_raw" not in d
-    assert "device_status_len_bits" not in d
-    assert "device_status_raw" not in d
-    assert "remaining_blob" not in d
-    assert "uart_device_type_label" not in d
-    assert "validation_warning" not in d
-    assert "validation_warnings_json" not in d
+    assert d.get("uart_device_type_label") == "unknown"
 
 
 def test_placeholders_no_bloquean_campos_posteriores():
@@ -223,20 +218,20 @@ def test_placeholders_no_bloquean_campos_posteriores():
     assert d.get("analog_in_1") is None
     assert d.get("analog_in_2") is None
     assert d.get("analog_in_3") is None
-    assert "analog_in_1_raw" not in d
-    assert "analog_in_2_raw" not in d
-    assert "analog_in_3_raw" not in d
-    assert "backup_batt_pct" not in d
+    assert d.get("analog_in_1_raw") is None
+    assert d.get("analog_in_2_raw") is None
+    assert d.get("analog_in_3_raw") is None
+    assert d.get("backup_battery_pct") == 100
     assert d.get("device_status") == "220100"
     assert d.get("uart_device_type") == 0
-    assert "uart_device_type_label" not in d
+    assert d.get("uart_device_type_label") == "unknown"
 
 
 def test_uart_device_type_dup_zero():
     d = parse_gteri(RAW_UART_DUP_ZERO)
 
     assert isinstance(d.get("uart_device_type"), int)
-    assert "uart_device_type_label" not in d
+    assert d.get("uart_device_type_label") == "unknown"
 
 
 def test_digital_fuel_sensor_data_consumed():
@@ -254,12 +249,12 @@ def test_analog_f_normalization():
     assert d.get("analog_in_1") == 8000
     assert d.get("analog_in_2") == 8000
     assert d.get("analog_in_3") == 22500
-    assert "analog_in_1_mv" not in d
-    assert "analog_in_1_pct" not in d
-    assert "analog_in_2_pct" not in d
-    assert "analog_in_3_pct" not in d
-    assert "validation_warning" not in d
-    assert "validation_warnings_json" not in d
+    assert d.get("analog_in_1_mv") == 8000
+    assert d.get("analog_in_1_pct") == pytest.approx(50.0)
+    assert d.get("analog_in_2_pct") == pytest.approx(50.0)
+    assert d.get("analog_in_3_pct") == pytest.approx(75.0)
+    warnings = set(d.get("validation_warnings") or [])
+    assert "validation_warning" not in warnings
 
 
 def test_warn_when_values_outside_range():
@@ -271,18 +266,17 @@ def test_warn_when_values_outside_range():
     assert d.get("device_status") == "0000000000-0F0FFFFFFF"
     assert d.get("uart_device_type") == 3
     assert d.get("digital_fuel_sensor_data") == "FUELX|DATA"
-    assert "backup_batt_pct" not in d
-    assert "backup_batt_pct_raw" not in d
-    assert "device_status_len_bits" not in d
-    assert "device_status_hi" not in d
-    assert "device_status_lo" not in d
-    assert "uart_device_type_label" not in d
-    assert "dfs_count" not in d
-    assert "dfs_raw_list" not in d
+    assert d.get("backup_battery_pct") == 100
+    assert d.get("backup_battery_pct_raw") == 130.0
+    assert d.get("device_status_len_bits") == 80
+    assert d.get("device_status_hi") == "0000000000"
+    assert d.get("device_status_lo") == "0F0FFFFFFF"
+    assert d.get("uart_device_type_label") == "invalid"
+    items = d.get("digital_fuel_sensor_data_items") or []
+    assert items[:2] == ["FUELX", "DATA"]
     warnings = set(d.get("validation_warnings") or [])
     assert "analog_in_1_mv_clamped" in warnings
     assert "analog_in_2_mv_clamped" in warnings
     assert "analog_in_3_mv_clamped" in warnings
-    assert "backup_batt_pct_clamped" in warnings
+    assert "backup_battery_pct_clamped" in warnings
     assert "uart_device_type_invalid" in warnings
-    assert "validation_warning" not in d
