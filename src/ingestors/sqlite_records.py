@@ -13,19 +13,6 @@ from queclink.parser import parse_line
 
 _LOGGER = logging.getLogger(__name__)
 
-_COMMON_COLUMNS: list[tuple[str, str]] = [
-    ("prefix", "TEXT"),
-    ("is_buff", "INTEGER"),
-    ("version", "TEXT"),
-    ("imei", "TEXT"),
-    ("model", "TEXT"),
-    ("send_time", "TEXT"),
-    ("count_hex", "TEXT"),
-    ("count_dec", "INTEGER"),
-    ("raw_line", "TEXT"),
-]
-
-
 def _repository_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -214,7 +201,7 @@ def spec_to_sql_columns(spec: dict) -> list[tuple[str, str]]:
 def ensure_table(conn, report: str, model: str, spec: dict) -> None:
     report_lower = report.strip().lower()
     table = f"{report_lower}_records"
-    columns = _COMMON_COLUMNS + spec_to_sql_columns(spec)
+    columns = spec_to_sql_columns(spec)
     column_defs = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
     seen: set[str] = set()
     for name, sql_type in columns:
@@ -222,16 +209,20 @@ def ensure_table(conn, report: str, model: str, spec: dict) -> None:
             continue
         seen.add(name)
         column_defs.append(f"\"{name}\" {sql_type}")
-    column_defs.append("UNIQUE(imei, send_time, count_hex)")
+    unique_candidates = ("imei", "send_time", "count_hex")
+    if all(field in seen for field in unique_candidates):
+        column_defs.append("UNIQUE(imei, send_time, count_hex)")
     conn.execute(
         f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(column_defs)})"
     )
-    conn.execute(
-        f"CREATE INDEX IF NOT EXISTS idx_{table}_imei_send_time ON {table} (imei, send_time)"
-    )
-    conn.execute(
-        f"CREATE INDEX IF NOT EXISTS idx_{table}_model_send_time ON {table} (model, send_time)"
-    )
+    if {"imei", "send_time"}.issubset(seen):
+        conn.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{table}_imei_send_time ON {table} (imei, send_time)"
+        )
+    if {"model", "send_time"}.issubset(seen):
+        conn.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{table}_model_send_time ON {table} (model, send_time)"
+        )
     conn.commit()
 
 
@@ -263,53 +254,12 @@ def _as_text(value: object) -> Optional[str]:
     return str(value)
 
 
-def _extract_send_time(parsed: dict) -> Optional[str]:
-    for key in ("send_time_raw", "send_time", "gnss_utc", "gnss_utc_time"):
-        value = parsed.get(key)
-        if isinstance(value, str) and value.isdigit() and len(value) == 14:
-            return value
-    send_time = parsed.get("send_time")
-    if isinstance(send_time, str) and send_time.endswith("Z"):
-        normalized = send_time.replace("-", "").replace(":", "").replace("T", "")
-        normalized = normalized.replace("Z", "")
-        if len(normalized) == 14 and normalized.isdigit():
-            return normalized
-    return None
+
 
 
 def normalize_for_sql(spec: dict, parsed: dict) -> dict:
     report = parsed.get("report") or parsed.get("message")
     row: dict[str, Optional[object]] = {}
-    prefix = parsed.get("prefix") or parsed.get("header")
-    if not prefix and isinstance(parsed.get("raw_line"), str):
-        raw = parsed["raw_line"]
-        prefix = raw.split(",", 1)[0].strip()
-    row["prefix"] = _as_text(prefix)
-    is_buff = parsed.get("is_buff")
-    if is_buff is None and isinstance(prefix, str):
-        is_buff = 1 if prefix.upper().startswith("+BUFF") else 0
-    row["is_buff"] = 1 if is_buff else 0
-    version = (
-        parsed.get("version")
-        or parsed.get("full_protocol_version")
-        or parsed.get("protocol_version")
-    )
-    row["version"] = _as_text(version)
-    row["imei"] = _as_text(parsed.get("imei"))
-    model = parsed.get("model") or parsed.get("device") or parsed.get("device_name")
-    row["model"] = _as_text(model)
-    row["send_time"] = _as_text(_extract_send_time(parsed))
-    count_hex = parsed.get("count_hex")
-    row["count_hex"] = _as_text(count_hex)
-    count_dec = parsed.get("count_dec")
-    if count_dec is None and isinstance(count_hex, str):
-        try:
-            count_dec = int(count_hex, 16)
-        except ValueError:
-            count_dec = None
-    row["count_dec"] = count_dec
-    row["raw_line"] = _as_text(parsed.get("raw_line"))
-
     column_types = spec_to_sql_columns(spec)
     for column, sql_type in column_types:
         raw_value = parsed.get(column)
@@ -376,7 +326,6 @@ def ingest_lines(
             _LOGGER.warning("[WARN] spec not found for %s/%s", model, report)
             continue
         ensure_table(conn, report, model, spec)
-        parsed.setdefault("raw_line", line)
         row = normalize_for_sql(spec, parsed)
         insert_record(conn, report, row)
         inserted += 1

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sqlite3
 import sys
 from pathlib import Path
 from typing import Iterable, Optional
@@ -109,160 +108,6 @@ def _process_line(
     return True
 
 
-def _safe_float(value: Optional[str]) -> Optional[float]:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _safe_int(value: Optional[str]) -> Optional[int]:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _get_token(tokens: list[str], index: int) -> Optional[str]:
-    if index < 0 or index >= len(tokens):
-        return None
-    value = tokens[index].strip()
-    return value or None
-
-
-def _build_gteri_record(tokens: list[str], raw_line: str) -> Optional[dict[str, object]]:
-    if not tokens:
-        return None
-    prefix = tokens[0].upper()
-    if not prefix.startswith("+RESP:GTERI") and not prefix.startswith("+BUFF:GTERI"):
-        return None
-
-    record: dict[str, object] = {
-        "prefix": tokens[0],
-        "message": "GTERI",
-        "is_buff": 1 if prefix.startswith("+BUFF") else 0,
-        "imei": _get_token(tokens, 2),
-        "model": (_get_token(tokens, 3) or "").upper() or None,
-        "report_type": _get_token(tokens, 6),
-        "speed_kmh": _safe_float(_get_token(tokens, 9)),
-        "azimuth_deg": _safe_int(_get_token(tokens, 10)),
-        "altitude_m": _safe_float(_get_token(tokens, 11)),
-        "lon": _safe_float(_get_token(tokens, 12)),
-        "lat": _safe_float(_get_token(tokens, 13)),
-        "gnss_utc": _get_token(tokens, 14),
-        "mcc": _get_token(tokens, 15),
-        "mnc": _get_token(tokens, 16),
-        "lac": _get_token(tokens, 17),
-        "cell_id": _get_token(tokens, 18),
-        "pos_append_mask": _get_token(tokens, 19),
-        "send_time": _get_token(tokens, len(tokens) - 2),
-        "count_hex": _get_token(tokens, len(tokens) - 1),
-        "raw_line": raw_line,
-    }
-    return record
-
-
-def _ensure_gteri_table(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS gteri_records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            prefix TEXT,
-            message TEXT,
-            imei TEXT,
-            model TEXT,
-            report_type TEXT,
-            is_buff INTEGER,
-            lon REAL,
-            lat REAL,
-            speed_kmh REAL,
-            azimuth_deg INTEGER,
-            altitude_m REAL,
-            gnss_utc TEXT,
-            send_time TEXT,
-            count_hex TEXT,
-            mcc TEXT,
-            mnc TEXT,
-            lac TEXT,
-            cell_id TEXT,
-            pos_append_mask TEXT,
-            raw_line TEXT
-        )
-        """
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_gteri_records_imei ON gteri_records(imei)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_gteri_records_time ON gteri_records(send_time)"
-    )
-    conn.commit()
-
-
-def _insert_gteri_record(conn: sqlite3.Connection, record: dict[str, object]) -> None:
-    columns = [
-        "prefix",
-        "message",
-        "imei",
-        "model",
-        "report_type",
-        "is_buff",
-        "lon",
-        "lat",
-        "speed_kmh",
-        "azimuth_deg",
-        "altitude_m",
-        "gnss_utc",
-        "send_time",
-        "count_hex",
-        "mcc",
-        "mnc",
-        "lac",
-        "cell_id",
-        "pos_append_mask",
-        "raw_line",
-    ]
-    placeholders = ", ".join(["?"] * len(columns))
-    values = [record.get(column) for column in columns]
-    conn.execute(
-        f"INSERT INTO gteri_records ({', '.join(columns)}) VALUES ({placeholders})",
-        values,
-    )
-
-
-def _ingest_gteri_lines(input_path: Path, output_path: Path) -> int:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(output_path))
-    try:
-        _ensure_gteri_table(conn)
-        inserted = 0
-        for line_number, raw_line in enumerate(_iter_lines(input_path), start=1):
-            tokens = _split_fields(raw_line)
-            record = _build_gteri_record(tokens, raw_line)
-            if record is None:
-                _LOGGER.debug(
-                    "Línea %s: se omitió trama que no coincide con +RESP/+BUFF:GTERI",
-                    line_number,
-                )
-                continue
-            try:
-                _insert_gteri_record(conn, record)
-            except sqlite3.DatabaseError as exc:
-                _LOGGER.warning(
-                    "Línea %s: error al insertar trama GTERI (%s)", line_number, exc
-                )
-                continue
-            inserted += 1
-        conn.commit()
-        return inserted
-    finally:
-        conn.close()
-
-
 def _relaxed_gtinf_parse(line: str, spec: Spec) -> Optional[dict[str, object]]:
     tokens = _split_fields(line)
     if len(tokens) < len(spec.fields):
@@ -323,11 +168,6 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not input_path.exists():
         print(f"[ERROR] No se encontró el archivo de entrada: {input_path}", file=sys.stderr)
         return 1
-
-    if expected_report == "GTERI":
-        inserted = _ingest_gteri_lines(input_path, output_path)
-        print(f"[OK] {inserted} tramas GTERI homologadas en {output_path}")
-        return 0
 
     ingestor = SQLiteIngestor(output_path)
     inserted = 0

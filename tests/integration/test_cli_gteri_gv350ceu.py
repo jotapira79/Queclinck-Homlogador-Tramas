@@ -37,6 +37,7 @@ def test_cli_gteri_creates_expected_schema(tmp_path) -> None:
     conn = sqlite3.connect(output_db)
     try:
         columns = [row[1] for row in conn.execute("PRAGMA table_info(gteri_gv350ceu)")]
+        assert {"raw_line", "is_buff", "prefix"}.isdisjoint(columns)
         expected_columns = [
             "header",
             "message",
