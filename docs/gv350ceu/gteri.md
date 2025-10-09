@@ -1,216 +1,259 @@
-# GTERI — Expand Fixed Report Information (GV350CEU)
+# GTERI (Expand Fixed Report Information) — GV350CEU
 
-**Comando:** `+RESP:GTERI` / `+BUFF:GTERI`  
-**Modelo:** GV350CEU  
-**Referencia:** Sección 4.2.3 *ERI (Expand Fixed Report Information)* del documento **GV350CEU_GTERI.pdf**  
-
----
-
-## Descripción general
-
-El mensaje **GTERI** (Expand Fixed Report Information) amplía la información de posición del reporte **GTFRI**, permitiendo incluir campos opcionales adicionales definidos por el **ERI Mask** y el **Position Append Mask**.
-
-Este mensaje se transmite como respuesta a eventos de reporte periódico, de movimiento, encendido, apagado u otros, y puede reemplazar completamente el formato **GTFRI** cuando la función ERI está habilitada.
+**Mensajes cubiertos:** `+RESP:GTERI` y `+BUFF:GTERI`  
+**Formato base:** ASCII, campos separados por `,`, terminador `$`  
+**Estructura general:** `Head → Body → Tail`  
+**Compatibilidad:** Alineado con `spec/gv350ceu/gteri.yml` y estilo de `gtinf.yml`
 
 ---
 
-## Formato general
+## 1) Estructura del mensaje
++RESP/+BUFF:GTERI,
+<full_protocol_version>,
+<imei>,
+<device_name>,
+<eri_mask>,
+<external_power_mv>,
+<report_type>,
+<number>,
+<gnss_accuracy>,
+<speed_kmh>,
+<azimuth>,
+<lon>,
+<lat>,
+<gnss_utc_time>,
+<mcc>,
+<mnc>,
+<lac_hex>,
+<cell_id_hex>,
+<position_append_mask>,
+[anexos controlados por position_append_mask],
+<mileage_km>,
+<hour_meter>,
+<analog_in_1>,
+<analog_in_2>,
+<analog_in_3>,
+<backup_batt_percent>,
+<device_status>,
+<uart_device_type>,
+[ERl Mask blocks (1-Wire, CAN, Fuel, RF433, BLE, RAT/Band, etc.)...],
+<send_time>,
+<count_hex>$
 
-+RESP:GTERI,<ProtocolVersion>,<IMEI>,<DeviceName>,<ERIMask>,<ExtPower>,<ReportType>,<Number>,<GNSSAcc>,<Speed>,<Azimuth>,<Altitude>,<Longitude>,<Latitude>,<GNSS_UTC>,<MCC>,<MNC>,<LAC>,<CellID>,<PosAppendMask>,<Satellites>,<GNSS_TriggerType>,<GNSS_JammingState>,<Mileage>,<HourMeter>,<AnalogIN1>,<AnalogIN2>,<AnalogIN3>,<BackupBattery>,<DeviceStatus>,<UARTDeviceType>,<DigitalFuelSensorData>,<OneWireData>,<CANData>,<FuelSensorData>,<RF433Data>,<BLEData>,<RATBand>,<SendTime>,<Count>,$
 
-
----
-
-## Campos principales
-
-| Campo | Tipo | Longitud / Rango | Descripción |
-|:------|:-----|:-----------------|:-------------|
-| **ProtocolVersion** | HEX(6) | `000000–FFFFFF` | Versión completa del protocolo. |
-| **IMEI** | Numérico(15) | 15 dígitos | Identificador único del dispositivo. |
-| **DeviceName** | Texto | hasta 20 caracteres | Nombre del modelo del dispositivo. |
-| **ERIMask** | HEX(8) | 8 dígitos | Controla qué bloques opcionales se incluyen. |
-| **ExtPower** | Int | 0–32000 mV | Voltaje externo (mV). |
-| **ReportType** | Cadena | formato X(1–5)Y(0–6) | Tipo de reporte. |
-| **Number** | Int | 1–15 | Número de evento. |
-| **GNSSAcc** | Int | 0–50 | Precisión GNSS (metros). |
-| **Speed** | Float | 0.0–999.9 km/h | Velocidad actual. |
-| **Azimuth** | Int | 0–359° | Dirección del movimiento. |
-| **Altitude** | Float | (-)xxxxx.x | Altitud sobre el nivel del mar (m). |
-| **Longitude** | Float | (-)xxx.xxxxxx | Longitud en grados decimales. |
-| **Latitude** | Float | (-)xx.xxxxxx | Latitud en grados decimales. |
-| **GNSS_UTC** | FechaHora | `YYYYMMDDHHMMSS` | Fecha y hora GNSS (UTC). |
-| **MCC** | Numérico(4) | Ej: `0460` | Mobile Country Code. |
-| **MNC** | Numérico(4) | Ej: `0000` | Mobile Network Code. |
-| **LAC** | HEX(4) | Ej: `550B` | Local Area Code. |
-| **CellID** | HEX(4/8) | Ej: `085BE2AA` | Identificador de celda. |
-| **PosAppendMask** | HEX(2) | Ej: `01` | Controla campos opcionales posteriores. |
-| **Satellites** | Int | 0–72 | Número de satélites en uso *(opcional, bit0=1)*. |
-| **GNSS_JammingState** | Enum | 0–3 | Estado del receptor GNSS *(opcional, bit4=1)*. |
-| **Mileage** | Float | 0.0–4,294,967 km | Odómetro acumulado. |
-| **HourMeter** | HH:MM:SS | 0000000:00:00–1193000:00:00 | Horómetro. |
-| **AnalogIN1–3** | String | mV o F(0–100) | Valores analógicos. |
-| **BackupBattery** | % | 0–100 | Nivel batería interna. |
-| **DeviceStatus** | HEX(6–10) | Ej: `210100` | Estado digital general. |
-| **UARTDeviceType** | Enum | 0,1,7 | Tipo de accesorio conectado por UART. |
-| **DigitalFuelSensorData** | String | variable | Datos crudos del sensor digital de combustible *(ERI bit0)*. |
+> Notas:
+> - Los campos “anexos” se habilitan por **máscaras** que se indican en el propio mensaje.
+> - La lista de anexos y su orden debe seguir exactamente la configuración de las máscaras.
 
 ---
 
-## Campos opcionales
+## 2) Campos por sección
 
-### 1-Wire Data
+### Head
 
-Presente si hay sensores conectados y/o **ERI Mask bit1=1**.
+| Campo | Tipo | Formato/Rango | Descripción |
+|---|---|---|---|
+| `header` | string | `+RESP:GT` / `+BUFF:GT` | Tipo de mensaje y origen. |
+| `message` | string | `ERI` | Nombre del mensaje. |
+| `full_protocol_version` | hex | 6 o 7 chars | Versión de protocolo (p. ej. `740904`). |
+| `imei` | string | 15 dígitos | Identificador único del equipo. |
+| `device_name` | string | ≤20 chars o vacío | Nombre del dispositivo. |
+
+### Body (básicos siempre presentes)
+
+| Campo | Tipo | Formato/Rango | Descripción |
+|---|---|---|---|
+| `eri_mask` | hex | 8 chars | Bitmask que habilita bloques ERI opcionales. |
+| `external_power_mv` | int | 0–32000 | Voltaje externo (mV). |
+| `report_type` | string | 2 hex chars | Tipo de evento (X(1-5)Y(0-6)). |
+| `number` | int | 1–15 | Número interno de reporte. |
+| `gnss_accuracy` | int | 0–50 | Precisión GNSS (m). |
+| `speed_kmh` | float | 0.0–999.9 | Velocidad en km/h. |
+| `azimuth` | int | 0–359 | Dirección del movimiento. |
+| `altitude_m` | float | opcional | Altitud en metros. |
+| `lon` | float | -180..180 | Longitud. |
+| `lat` | float | -90..90 | Latitud. |
+| `gnss_utc_time` | datetime | `YYYYMMDDHHMMSS` | Hora UTC GNSS. |
+| `mcc` | string | `0xxx` | Código de país. |
+| `mnc` | string | `0xxx` | Código de red. |
+| `lac_hex` | hex | 4 chars | Local Area Code. |
+| `cell_id_hex` | hex | 4 u 8 chars | Cell ID. |
+| `position_append_mask` | hex | 2 chars | Controla anexos GNSS y celda. |
+
+---
+
+## 3) Máscaras y bloques opcionales
+
+### 3.1 Position Append Mask (2 hex chars)
+
+Controla campos GNSS/celda después de `cell_id_hex`.
+
+| Bit | Campo | Tipo | Descripción |
+|---|---|---|---|
+| 0 | `satellites_in_use` | int | Número de satélites utilizados. |
+| 1 | `gnss_trigger_type` | int | Tipo de trigger GNSS. |
+| 4 | `gnss_jamming_state` | int | Estado de interferencia GNSS (0=Unknown, 1=OK, 2=Warning, 3=Critical). |
+
+> Si el bit no está activo, el campo **no aparece** en la trama.
+
+---
+
+### 3.2 ERI Mask (8 hex chars)
+
+Activa bloques completos opcionales del ERI.  
+Cada bit controla un grupo de datos. Solo se incluyen si el bit está activo.
+
+| Bit | Bloque | Campos incluidos | Descripción |
+|---|---|---|---|
+| 0 | Digital Fuel Sensor | `digital_fuel_sensor_raw` | Valor o trama cruda del sensor de combustible digital. |
+| 1 | 1-Wire | `onewire_device_count`, `onewire_device_id`, `onewire_device_type`, `onewire_device_data` | Sensores de temperatura 1-Wire. |
+| 2 | CAN | `can_data` | Datos CAN crudos o resumidos. |
+| 10 | Fuel Sensor | `fuel_sensor_count`, `fuel_sensor_type`, `fuel_percentage`, `fuel_volume_l`, `fuel_temperature_c` | Sensores de combustible analógicos o digitales. |
+| 11 | RF433 | `rf433_count`, `rf433_serial`, `rf433_type`, `rf433_temperature_c`, `rf433_humidity_pct` | Sensores inalámbricos 433 MHz. |
+| 12 | BLE Accessories | Campos según BLE Append Mask | Sensores Bluetooth (WTS300, WTD200, TPMS, etc.). |
+| 13 | RAT/Band | `rat`, `band` | Tipo de red y banda LTE/2G/3G. |
+
+> Los bits no listados se reservan para futuras expansiones o funciones específicas.
+
+---
+
+### 3.3 BLE Append Mask (0–31 bits)
+
+Controla los campos de cada accesorio BLE.
+
+#### Base (bits 0–15)
+
+| Bit | Campo | Descripción |
+|---|---|---|
+| 0 | `ble_name` | Nombre del accesorio BLE. |
+| 1 | `ble_mac` | Dirección MAC BLE. |
+| 2 | `ble_status` | Estado (0=off, 1=on). |
+| 3 | `ble_batt_mv` | Voltaje batería BLE. |
+| 4 | `ble_temp_c` | Temperatura (°C). |
+| 5 | `ble_humidity_pct` | Humedad (%). |
+| 6 | — | Reservado. |
+| 7 | `ble_io_output`, `ble_io_input`, `ble_io_analog_mv` | Entradas/Salidas digitales y analógicas. |
+| 8 | `ble_mode`, `ble_event` | Modo de operación y tipo de evento. |
+| 9 | `ble_tire_pressure_kpa` | Presión neumático (TPMS). |
+| 10 | `ble_timestamp` | Timestamp del accesorio. |
+| 11 | `ble_temp_enh_c` | Temperatura mejorada. |
+| 12 | `ble_magnet_id`, `ble_mag_event_counter`, `ble_magnet_state` | Datos de sensores magnéticos. |
+| 13 | `ble_batt_pct` | Porcentaje batería BLE. |
+| 14 | `ble_relay_state` | Estado del relé BLE. |
+| 15 | **Expansión activa (habilita bits 16–31)** | — |
+
+#### Extensión (bits 16–31)
+
+| Bit | Campo | Descripción |
+|---|---|---|
+| 16 | `ble_triax_accel_hex` | Aceleración triaxial (X,Y,Z). |
+| 17 | `ble_angles_hex` | Ángulos Pitch/Roll/Yaw. |
+| 18 | `ble_sensor_event_mask`, `ble_tilt_event_hex`, `ble_motion_event_hex`, `ble_crash_event_hex`, `ble_falling_event_hex` | Eventos de movimiento o inclinación. |
+| 19 | `ble_move_event_hex` | Evento de movimiento. |
+| 20–31 | — | Reservado para futuras extensiones. |
+
+---
+
+## 4) Body (otros campos comunes)
 
 | Campo | Tipo | Descripción |
-|:------|:-----|:-------------|
-| **OneWireDeviceNumber** | Int(0–19) | Número de sensor. |
-| **OneWireDeviceID** | HEX(16) | ID único. |
-| **OneWireDeviceType** | Int(1) | 1 = Sensor de temperatura. |
-| **OneWireDeviceData** | HEX | Temperatura en complemento a dos. |
-
-> Temperatura real = valor decimal × 0.0625 °C
+|---|---|---|
+| `mileage_km` | float | Odómetro (km). |
+| `hour_meter` | string | Horas de motor `ddddddd:hh:mm`. |
+| `analog_in_1` | string | Entrada analógica 1 (mV o F%). |
+| `analog_in_2` | string | Entrada analógica 2 (mV o F%). |
+| `analog_in_3` | string | Entrada analógica 3 (mV o F%). |
+| `backup_batt_percent` | int | % batería interna. |
+| `device_status` | hex | Estado general del equipo (6 o 10 chars). |
+| `uart_device_type` | int | Tipo de dispositivo conectado por UART. |
 
 ---
 
-### CAN Data
-
-Presente si **ERI Mask bit2=1**.
+## 5) Tail
 
 | Campo | Tipo | Descripción |
-|:------|:-----|:-------------|
-| **CANData** | String | Datos crudos leídos desde el bus CAN. |
+|---|---|---|
+| `send_time` | datetime | Hora de envío (`YYYYMMDDHHMMSS`). |
+| `count_hex` | hex | Contador incremental del mensaje. |
 
 ---
 
-### Fuel Sensor Data
+## 6) Reglas de validación recomendadas
 
-Presente según **ERI Mask** y tipo de sensor.
-
-| Campo | Tipo | Descripción |
-|:------|:-----|:-------------|
-| **SensorNumber** | Int(0–100) | Número del sensor. |
-| **SensorType** | Enum | 0–6, 20–22 | Tipo de sensor. |
-| **Percentage** | Float(%) | Nivel de combustible. |
-| **VolumeLiters** | Float | Volumen estimado. |
-| **FuelTemperature** | °C | Si bit10=1 y tipo 2/6 (DUT-E o DUT-E SUM). |
+1. `header` debe ser `+RESP:GT` o `+BUFF:GT`.  
+2. `message` debe ser exactamente `ERI`.  
+3. La línea **debe terminar** con `$`.  
+4. `lat` y `lon` deben estar dentro de los rangos válidos.  
+5. Si una máscara no activa un bloque, esos campos **no deben parsearse**.  
+6. El orden de los campos sigue el orden natural del protocolo y las máscaras.
 
 ---
 
-### RF433 Accessory Data
+## 7) Ejemplos
 
-Presente si hay accesorios RF433 (ej. WTS100, WTH100).
-
-| Campo | Tipo | Descripción |
-|:------|:-----|:-------------|
-| **AccessoryNumber** | Int(0–10) | Identificador. |
-| **AccessorySerial** | HEX(5) | Serial RF433. |
-| **AccessoryType** | Enum | 1: WTS100, 2: WTH100. |
-| **Temperature** | °C | -20 a 60 °C |
-| **Humidity** | % | 0–100 % (solo WTH100). |
-
----
-
-### Bluetooth Accessory Data (BLE)
-
-Presente si hay accesorios BLE o **ERI Mask** lo habilita.
-
-Incluye sensores BLE como WTS100-B, BLE-Relay, BLE-TPMS, BLE-Magnet, etc.
-
-| Campo | Tipo | Descripción |
-|:------|:-----|:-------------|
-| **AccessoryType** | Int | Tipo de accesorio BLE. |
-| **AccessoryModel** | Int | Modelo. |
-| **AccessoryName** | Texto | Nombre del accesorio *(bit0)*. |
-| **AccessoryMAC** | HEX(12) | Dirección MAC *(bit1)*. |
-| **AccessoryStatus** | Int | Estado *(bit2)*. |
-| **AccessoryBattery_mV** | Int | Voltaje batería *(bit3)*. |
-| **AccessoryTemp_C** | Int | Temperatura *(bit4)*. |
-| **AccessoryHumidity_%** | Int | Humedad *(bit5)*. |
-| **AccessoryIOStatus** | HEX(2) | Datos de E/S *(bit7)*. |
-| **AccessoryEvent/Mode** | Int | Evento BLE *(bit8–bit10)*. |
-| **EnhancedTemperature** | Float | Temperatura extendida *(bit11)*. |
-| **MagnetID / State / Counter** | HEX / Int | Información de magneto *(bit12)*. |
-| **RelayState** | 0/1 | Estado del relay *(bit14)*. |
-| **TriAxisAccel** | HEX(12) | Datos de aceleración *(bit16)*. |
-
-#### BLE Accessory Append Mask
-- Bits 0–15: campos base
-- Bit15: habilita expansión
-- Bits 16–31: campos extendidos
-
-Ejemplo: `0x881F0007` → `(15..0)=0x881F`, `(31..16)=0x0007`
-
----
-
-### RAT / Band
-
-Presente si disponible en firmware reciente.
-
-| Campo | Tipo | Descripción |
-|:------|:-----|:-------------|
-| **RAT** | Enum | 0: No Service, 1: EGPRS, 4: LTE Cat1 |
-| **Band** | String | Banda celular activa (LTE/GSM). |
-
----
-
-## Máscaras
-
-### ERI Mask
-
-Controla la inclusión de secciones opcionales:
-
-| Bit | Significado |
-|:----|:-------------|
-| **0** | Digital Fuel Sensor Data |
-| **1** | One-Wire Data (datos visibles) |
-| **2** | CAN Data |
-| **10** | Fuel Temperature (para tipo 2 o 6) |
-
----
-
-### Position Append Mask
-
-Define la presencia de campos después del `<CellID>`:
-
-| Bit | Campo opcional |
-|:----|:----------------|
-| **0** | Satellites in Use |
-| **4** | GNSS Jamming State |
-
----
-
-## Ejemplo de trama
+### Ejemplo 1 — con anexos
 
 +RESP:GTERI,740904,862524060204589,GV350CEU,00000100,,10,1,1,0.0,355,97.7,117.129252,31.839388,20240415054037,0460,0000,550B,085BE2AA,01,11,3.6,,,,,0,210100,0,1,00,11,0,0000001E,100F,,D325C2B2A2F8,1,2967,0,15,0,20240415154438,405C$
 
 
-### Decodificación parcial
+**Campos clave detectables:**
+- `imei=862524060204589`
+- `eri_mask=00000100`
+- `lon=117.129252`, `lat=31.839388`
+- `position_append_mask=01`
+- `send_time=20240415154438`
 
-| Campo | Valor | Descripción |
-|:------|:------|:-------------|
-| ProtocolVersion | 740904 | Versión del protocolo |
-| IMEI | 862524060204589 | Identificador único |
-| DeviceName | GV350CEU | Modelo del dispositivo |
-| ERIMask | 00000100 | Indica inclusión de bloques ERI |
-| MCC/MNC | 0460 / 0000 | China Unicom |
-| LAC / CellID | 550B / 085BE2AA | Identificadores de celda |
-| PosAppendMask | 01 | Incluye satélites |
-| Mileage | 3.6 km | Odómetro |
-| DeviceStatus | 210100 | Estado digital |
-| SendTime | 20240415154438 | Fecha de envío (UTC) |
-| Count | 405C | Contador de mensaje |
+### Ejemplo 2 — sin anexos
++RESP:GTERI,040A00,862524060204589,,00000000,12000,10,1,5,12.3,180,-70.650000,-33.450000,20250101080000,0732,0002,1A2B,00,1234.5,0000001:00:15,1200,2300,1500,90,210100,0,20250101080100,00AF$
+
 
 ---
 
-## Observaciones
+## 8) Notas de implementación
 
-- El mensaje **GTERI** reemplaza a **GTFRI** cuando la opción *ERI Enable* está activa.  
-- Campos adicionales aparecen solo si los bits correspondientes en **ERI Mask** o **Position Append Mask** están habilitados.  
-- La decodificación correcta depende de interpretar la longitud y presencia condicional de los bloques opcionales.  
-- En firmware recientes, se puede incluir información adicional como **RAT**, **Band**, **BLE Expanded Fields** y **DOPs (HDOP, PDOP, VDOP)** cuando están configurados.  
+- El parser debe respetar el orden y evaluar las máscaras bit a bit.  
+- Las listas (1-Wire, RF433, BLE) comienzan con un `count` seguido de grupos repetidos.  
+- `hour_meter` tiene formato fijo `ddddddd:hh:mm`.  
+- Si `ble_append_mask` ≥ `0x8000`, activar extensión bits 16–31.  
+- `device_status` puede tener longitud 6 o 10 hex.  
+- `rat` y `band` pueden omitirse si el bit ERI correspondiente no está activo.  
 
 ---
 
-**Última actualización:** Octubre 2025  
-**Fuente:** `GV350CEU_GTERI.pdf – Sección 4.2.3 ERI`
+## 9) Mapeo sugerido a base de datos
+
+| Campo | Tipo SQL | Comentario |
+|---|---|---|
+| imei | TEXT | Índice principal |
+| gnss_utc_time | TEXT | Timestamp GNSS |
+| send_time | TEXT | Timestamp de envío |
+| lat | REAL | Latitud |
+| lon | REAL | Longitud |
+| eri_mask | TEXT | Hex 8 chars |
+| position_append_mask | TEXT | Hex 2 chars |
+| device_status | TEXT | Estado del equipo |
+| report_type | TEXT | Tipo de reporte |
+| rat | INTEGER | Tecnología de red |
+| band | TEXT | Banda de transmisión |
+
+---
+
+## 10) Referencias
+
+- `spec/gv350ceu/gteri.yml` — definición técnica estructurada del mensaje  
+- `GV350CEU_GTERI.pdf` — documento oficial Queclink (Sección 4.2.3 ERI)  
+- `spec/gv350ceu/gtinf.yml` — referencia de formato y convenciones de documentación  
+- Parser: `queclink/messages/gteri.py`  
+- Ingestor: `ingestor_sqlite.py`  
+
+---
+
+## 11) Resumen
+
+El mensaje **GTERI (Expand Fixed Report Information)** permite transmitir información extendida de posición y sensores opcionales del GV350CEU.  
+A diferencia de **GTINF**, su estructura se adapta dinámicamente a las **máscaras de datos (ERI Mask y Position Append Mask)**, lo que permite al dispositivo enviar datos adicionales solo cuando están habilitados, optimizando el uso del ancho de banda.
+
+Head → Body (datos fijos + opcionales) → Tail
+Máscaras: ERI Mask, Position Append Mask y BLE Append Mask
+
+---
