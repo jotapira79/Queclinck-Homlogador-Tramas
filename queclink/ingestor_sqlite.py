@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional, Sequence
 
 from .messages.gtinf import parse_gtinf as _parse_gtinf
-from .parser import parse_line
+from .parser import detect_model_from_identifiers, parse_line
 from .specs.loader import get_spec_path, load_spec_columns_from_path
 
 MODELS = ("GV310LAU", "GV58LAU", "GV350CEU")
@@ -222,27 +222,43 @@ def ingest_gtinf_line(conn: sqlite3.Connection, line: str) -> bool:
         return False
 
     if len(parts) < 4:
-        _LOGGER.warning("Trama GTINF sin 4º campo para modelo: %s", line)
+        _LOGGER.warning("Trama GTINF sin campos suficientes para determinar el modelo: %s", line)
         return False
 
-    device = parts[3].strip()
-    if not device:
-        _LOGGER.warning("No se pudo determinar el modelo GTINF en la trama: %s", line)
-        return False
-
-    spec_path = get_spec_path("GTINF", device)
-    spec_file = Path(spec_path)
-    if not spec_file.exists():
+    imei = parts[2].strip() if len(parts) > 2 else ""
+    reported_device = parts[3].strip()
+    model = detect_model_from_identifiers(imei, reported_device)
+    if not model:
         _LOGGER.warning(
-            "No se encontró spec para GTINF del modelo %s en %s", device, spec_path
+            "No se pudo determinar el modelo GTINF por prefijo de IMEI en la trama: %s",
+            line,
         )
         return False
 
-    row = _parse_gtinf(line, device=device)
+    model = model.strip().upper()
+
+    try:
+        spec_path = get_spec_path("GTINF", model)
+    except ValueError:
+        _LOGGER.warning(
+            "No se encontró spec para GTINF del modelo %s (prefijo IMEI %s)",
+            model,
+            imei[:8] if imei else "",
+        )
+        return False
+
+    spec_file = Path(spec_path)
+    if not spec_file.exists():
+        _LOGGER.warning(
+            "No se encontró spec para GTINF del modelo %s en %s", model, spec_path
+        )
+        return False
+
+    row = _parse_gtinf(line, device=model)
     if not row:
         return False
 
-    table = f"gtinf_{device.strip().lower()}"
+    table = f"gtinf_{model.lower()}"
     insert_row_from_spec(conn, table, spec_file, row)
     return True
 

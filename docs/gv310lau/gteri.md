@@ -17,7 +17,9 @@ Este documento resume, normaliza y hace operativa la especificación del mensaje
 - **Nombre de mensaje:** `+RESP:GTERI`  
 - **Dispositivo:** `GV310LAU`  
 - **Propósito:** Reporte de posición ampliado (sustituye a `+RESP:GTFRI` cuando la función ERI está habilitada).  
-- **Formato:** ASCII, campos separados por coma `,` y terminados con `$`.  
+- **Formato:** ASCII, campos separados por coma `,` y terminados con `$`.
+- **Identificación del modelo:** la homologación usa el prefijo IMEI `86858906`,
+  independiente del valor configurado en `Device Name`.
 
 > Cuando `+RESP:GTERI` está habilitado, el equipo envía `+RESP:GTERI` en lugar de `+RESP:GTFRI`.
 
@@ -46,7 +48,7 @@ La trama se divide en **Head**, **Body** y **Tail**. A continuación, se listan 
 |        | Coma separadora  | 1        | `,`                                       |
 |        | Full Proto Ver.  | 6        | `000000` – `FFFFFF` (hex)                |
 |        | Unique ID        | 15       | IMEI                                      |
-|        | Device Name      | ≤20      | 0–9, a–z, A–Z, `-`, `_`                   |
+|        | Device Name      | ≤20      | 0–9, a–z, A–Z, `-`, `_` (personalizable)  |
 
 ### 3.2 Body
 
