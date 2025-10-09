@@ -810,6 +810,8 @@ def parse_gteri(line: str, source: str = "RESP", device: Optional[str] = None) -
             data["spec_path"] = None
 
     enriched = _common_enrich(data, detected_source or source, protocol_version, count_hex)
+    for meta in ("prefix", "is_buff", "raw_line", "raw_after_mask"):
+        enriched.pop(meta, None)
     return enriched
 
 
