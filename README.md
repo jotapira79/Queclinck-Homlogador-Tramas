@@ -60,6 +60,9 @@ El parser de `+RESP:+/BUFF:GTERI` reconoce la totalidad de la estructura definid
   VDOP/PDOP.
 - Bloques ERI: sensores de combustible digitales, accesorios RF433 y BLE (con iteración de
   accesorios y máscara de campos anexos).
+- Compatibilidad ampliada con los modelos **GV350CEU** y **GV58LAU**, incluyendo conteo de
+  accesorios BLE, campos reservados, máscaras extendidas y los nuevos datos de RAT/Band
+  definidos en `spec/gv350ceu/gteri.yml` y `spec/gv58lau/gteri.yml`.
 - Campos extendidos como `device_status_*`, `backup_battery_pct`, listas de advertencias de
   validación y la ruta al archivo de especificación usado (`spec_path`).
 

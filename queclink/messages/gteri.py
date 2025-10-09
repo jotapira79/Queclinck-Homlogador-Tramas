@@ -39,6 +39,10 @@ def _safe_int(value: Any, base: int = 10) -> Optional[int]:
         return None
 
 
+def _is_hour_meter(candidate: Optional[str]) -> bool:
+    return bool(re.fullmatch(r"\d{1,7}:\d{2}:\d{2}", (candidate or "").strip()))
+
+
 @dataclass
 class _CommonERI:
     prefix: str
@@ -258,11 +262,15 @@ def _parse_rf433_block(tokens: List[Optional[str]], cursor: int) -> Tuple[Option
 
 
 def _parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dict[str, Any]:
+    normalized = (device or "").strip().upper()
+    if normalized == "GV58LAU":
+        return _parse_model_specific_gv58(fields, start_idx)
+    return _parse_model_specific_default(fields, start_idx)
+
+
+def _parse_model_specific_default(fields: List[str], start_idx: int) -> Dict[str, Any]:
     remaining = fields[start_idx:-2] if len(fields) >= (start_idx + 2) else fields[start_idx:]
     out: Dict[str, Any] = {}
-
-    def looks_like_hourmeter(candidate: Optional[str]) -> bool:
-        return bool(re.fullmatch(r"\d{1,7}:\d{2}:\d{2}", candidate or ""))
 
     mask_value = _mask_value(fields[start_idx - 1] if start_idx - 1 < len(fields) else None)
     eri_mask_value = _mask_value(fields[4] if len(fields) > 4 else None)
@@ -318,7 +326,7 @@ def _parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dic
     mileage_set = False
     hour_set = False
 
-    if cursor < len(remaining) and looks_like_hourmeter(remaining[cursor] or ""):
+    if cursor < len(remaining) and _is_hour_meter(remaining[cursor]):
         out["hour_meter"] = remaining[cursor]
         cursor += 1
         hour_set = True
@@ -326,7 +334,7 @@ def _parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dic
         out["mileage_km"] = _safe_float(remaining[cursor])
         cursor += 1
         mileage_set = True
-    if not hour_set and cursor < len(remaining) and looks_like_hourmeter(remaining[cursor] or ""):
+    if not hour_set and cursor < len(remaining) and _is_hour_meter(remaining[cursor]):
         out["hour_meter"] = remaining[cursor]
         cursor += 1
         hour_set = True
@@ -507,6 +515,177 @@ def _parse_model_specific(device: str, fields: List[str], start_idx: int) -> Dic
         out["rf433_block"] = rf433_block
     if ble_block:
         out["ble_block"] = ble_block
+        out["ble_count"] = ble_block.get("accessory_number")
+
+    skip_empty_values()
+    if cursor < len(remaining):
+        rat_raw = remaining[cursor]
+        rat_value = _safe_int(rat_raw)
+        if rat_value is not None:
+            cursor += 1
+            band_raw = remaining[cursor] if cursor < len(remaining) else None
+            band_value = band_raw if band_raw not in (None, "") else None
+            if band_raw is not None:
+                cursor += 1
+            out["rat_band"] = {"rat": rat_value, "band": band_value}
+            out["rat"] = rat_value
+            if band_value is not None:
+                out["band"] = band_value
+
+    out["remaining_blob"] = ",".join(value or "" for value in remaining[cursor:])
+    return out
+
+
+def _parse_model_specific_gv58(fields: List[str], start_idx: int) -> Dict[str, Any]:
+    remaining = fields[start_idx:-2] if len(fields) >= (start_idx + 2) else fields[start_idx:]
+    out: Dict[str, Any] = {}
+
+    mask_value = _mask_value(fields[start_idx - 1] if start_idx - 1 < len(fields) else None)
+    eri_mask_value = _mask_value(fields[4] if len(fields) > 4 else None)
+
+    cursor = 0
+
+    def skip_empty_values() -> None:
+        nonlocal cursor
+        while cursor < len(remaining) and (remaining[cursor] or "") == "":
+            cursor += 1
+
+    def peek(offset: int = 0) -> Optional[str]:
+        idx = cursor + offset
+        if idx >= len(remaining):
+            return None
+        return remaining[idx]
+
+    def advance() -> Optional[str]:
+        nonlocal cursor
+        value = peek()
+        cursor += 1
+        return value
+
+    # Satélites y DOPs
+    skip_empty_values()
+    sat_token = peek()
+    if sat_token not in (None, ""):
+        out["sats_in_use"] = _safe_int(sat_token)
+    if sat_token is not None:
+        advance()
+
+    dop_keys = ["hdop", "vdop", "pdop"]
+    for key in dop_keys:
+        if cursor >= len(remaining):
+            break
+        token = peek()
+        if token in (None, ""):
+            advance()
+            continue
+        value = _safe_float(token)
+        if value is not None:
+            out[key] = value
+        advance()
+
+    # Permitir trigger/jamming opcional si llega intercalado
+    if cursor < len(remaining):
+        candidate = peek()
+        if candidate and re.fullmatch(r"\d{1,2}", candidate):
+            out["gnss_trigger_type"] = _safe_int(candidate)
+            advance()
+
+    # Odómetro y horómetro
+    skip_empty_values()
+    mileage_token = peek()
+    if mileage_token not in (None, ""):
+        mileage_val = _safe_float(mileage_token)
+        if mileage_val is not None:
+            out["mileage_km"] = mileage_val
+    if mileage_token is not None:
+        advance()
+
+    skip_empty_values()
+    hour_token = peek()
+    if _is_hour_meter(hour_token):
+        out["hour_meter"] = hour_token
+        advance()
+
+    # Batería de respaldo (puede venir vacía)
+    backup_token = peek()
+    if backup_token is not None:
+        advance()
+    backup_value = _safe_float(backup_token) if backup_token not in (None, "") else None
+    if backup_value is not None:
+        backup_int = int(round(backup_value))
+        out["backup_battery_pct_raw"] = backup_value
+        out["backup_battery_pct"] = backup_int
+        out["backup_batt_pct"] = backup_int
+
+    # Device status y reservados
+    skip_empty_values()
+    status_token = peek()
+    if status_token not in (None, ""):
+        normalized_status = status_token.strip().upper()
+        out["device_status_raw"] = status_token.strip()
+        out["device_status"] = normalized_status
+        advance()
+
+    if cursor < len(remaining):
+        res1 = advance()
+        out["reserved_1"] = res1 or None
+
+    if cursor < len(remaining):
+        res2 = advance()
+        out["reserved_2"] = res2 or None
+
+    skip_empty_values()
+
+    def looks_like_ble_start(idx: int) -> bool:
+        if idx >= len(remaining):
+            return False
+        count = _safe_int(remaining[idx])
+        if count is None or count < 0:
+            return False
+        minimal = idx + 1 + count * 5
+        return len(remaining) >= minimal
+
+    if not looks_like_ble_start(cursor):
+        res3 = peek()
+        if res3 is not None:
+            out["reserved_3"] = res3 or None
+            advance()
+        skip_empty_values()
+    else:
+        out.setdefault("reserved_3", None)
+
+    if eri_mask_value is not None and (eri_mask_value & 0x04):
+        if cursor < len(remaining) and not looks_like_ble_start(cursor):
+            can_token = advance()
+            if can_token not in (None, ""):
+                out["can_data"] = can_token
+        skip_empty_values()
+
+    ble_block: Optional[Dict[str, Any]] = None
+    ble_start = cursor
+    if looks_like_ble_start(cursor):
+        ble_block, cursor = _parse_ble_block(remaining, cursor)
+    if ble_block:
+        out["ble_block"] = ble_block
+        out["ble_count"] = ble_block.get("accessory_number")
+    else:
+        cursor = ble_start
+
+    skip_empty_values()
+    rat_token = peek()
+    if rat_token not in (None, ""):
+        rat_val = _safe_int(rat_token)
+        if rat_val is not None:
+            advance()
+            band_token = peek()
+            band_val: Optional[str] = None
+            if band_token not in (None, ""):
+                band_val = band_token
+                advance()
+            out["rat_band"] = {"rat": rat_val, "band": band_val}
+            out["rat"] = rat_val
+            if band_val is not None:
+                out["band"] = band_val
 
     out["remaining_blob"] = ",".join(value or "" for value in remaining[cursor:])
     return out
@@ -593,6 +772,10 @@ def parse_gteri(line: str, source: str = "RESP", device: Optional[str] = None) -
     data.setdefault("lat", data.get("latitude_deg"))
     data.setdefault("backup_batt_pct", data.get("backup_battery_pct"))
     data.setdefault("ext_power_mv", data.get("external_power_mv"))
+    if "ble_count" not in data:
+        block = data.get("ble_block")
+        if isinstance(block, dict):
+            data["ble_count"] = block.get("accessory_number")
     if data.get("hdop") is None:
         for candidate_key in ("vdop", "pdop"):
             value = data.get(candidate_key)
