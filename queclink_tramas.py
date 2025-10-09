@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from queclink.parser import parse_gteri, parse_gtinf, parse_line
-from src.ingestors.sqlite_gtinf import ensure_db, ingest_lines
+from src.ingestors.sqlite_records import ensure_db, ingest_lines
 
 __all__ = ["parse_line", "parse_gteri", "parse_gtinf", "parse_line_to_record"]
 
