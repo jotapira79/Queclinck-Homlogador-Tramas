@@ -96,6 +96,7 @@ GTERI_COLUMNS: Mapping[str, str] = {
     "digital_fuel_sensor_data_items": "TEXT",
     "rf433_block": "TEXT",
     "ble_block": "TEXT",
+    "ble_count": "INTEGER",
     "gnss_fix": "INTEGER",
     "is_last_fix": "INTEGER",
     "spec_path": "TEXT",
@@ -105,6 +106,12 @@ GTERI_COLUMNS: Mapping[str, str] = {
     "count_hex": "TEXT",
     "count_dec": "INTEGER",
     "validation_warnings": "TEXT",
+    "reserved_1": "TEXT",
+    "reserved_2": "TEXT",
+    "reserved_3": "TEXT",
+    "rat_band": "TEXT",
+    "rat": "INTEGER",
+    "band": "TEXT",
 }
 
 GTINF_COLUMNS: Mapping[str, str] = {
