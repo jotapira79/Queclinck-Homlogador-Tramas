@@ -147,6 +147,16 @@ schema:
                   battery_pct: { type: int, min: 0, max: 100, nullable: true }
                   relay_state: { type: int, enum: [0,1], nullable: true }
 
+        - name: rat
+          type: int
+          optional: true
+          when: { mask: eri_mask, bit: 13 }
+
+        - name: band
+          type: string
+          optional: true
+          when: { field_present: rat }
+
     - name: tail
       fields:
         - { name: send_time, type: datetime, format: "YYYYMMDDHHMMSS" }

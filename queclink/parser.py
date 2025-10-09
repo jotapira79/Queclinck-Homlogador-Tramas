@@ -22,26 +22,56 @@ _MODEL_PREFIXES = {
 }
 
 
+_EQUALS_SENTINEL = object()
+
+
 @dataclass(frozen=True)
 class Condition:
     mask_field: Optional[str] = None
     bit: Optional[int] = None
     field_present: Optional[str] = None
+    field_name: Optional[str] = None
+    equals: object = _EQUALS_SENTINEL
+    any_of: Sequence["Condition"] = field(default_factory=tuple)
 
     @staticmethod
     def from_mapping(mapping: Optional[dict]) -> Optional["Condition"]:
         if not mapping or not isinstance(mapping, dict):
             return None
+
+        any_of_raw = mapping.get("anyOf") or mapping.get("any_of")
+        if isinstance(any_of_raw, (list, tuple)):
+            subconditions = [
+                Condition.from_mapping(item)
+                for item in any_of_raw
+                if isinstance(item, dict)
+            ]
+            subconditions = [cond for cond in subconditions if cond]
+            if subconditions:
+                return Condition(any_of=tuple(subconditions))
+            return None
+
+        mask_field = mapping.get("mask_field") or mapping.get("mask")
         bit_value = mapping.get("bit")
         try:
             bit = int(bit_value) if bit_value is not None else None
         except (TypeError, ValueError):
             bit = None
+
         field_present = mapping.get("field_present")
-        mask_field = mapping.get("mask_field")
-        if not any((mask_field, field_present)):
+        field_name = mapping.get("field")
+        equals_value = mapping.get("equals", _EQUALS_SENTINEL)
+
+        if not any((mask_field, field_present, field_name)):
             return None
-        return Condition(mask_field=mask_field, bit=bit, field_present=field_present)
+
+        return Condition(
+            mask_field=mask_field,
+            bit=bit,
+            field_present=field_present,
+            field_name=field_name,
+            equals=equals_value,
+        )
 
 
 @dataclass(frozen=True)
@@ -158,13 +188,34 @@ def _build_field(entry: dict) -> FieldSpec:
     optional = bool(entry.get("optional", False))
     const = entry.get("const")
     const_any = _ensure_sequence(entry.get("const_any"))
+
     present_if = Condition.from_mapping(entry.get("present_if"))
-    present_if_any = tuple(
-        filter(None, (Condition.from_mapping(item) for item in entry.get("present_if_any", []) or []))
-    )
-    enabled_if_any = tuple(
-        filter(None, (Condition.from_mapping(item) for item in entry.get("enabled_if_any", []) or []))
-    )
+    present_if_any_list = [
+        cond
+        for cond in (
+            Condition.from_mapping(item)
+            for item in entry.get("present_if_any", []) or []
+        )
+        if cond
+    ]
+    enabled_if_any_list = [
+        cond
+        for cond in (
+            Condition.from_mapping(item)
+            for item in entry.get("enabled_if_any", []) or []
+        )
+        if cond
+    ]
+
+    when_entry = entry.get("when")
+    if isinstance(when_entry, dict):
+        when_condition = Condition.from_mapping(when_entry)
+        if when_condition:
+            if when_condition.any_of:
+                present_if_any_list.extend(when_condition.any_of)
+            else:
+                enabled_if_any_list.append(when_condition)
+
     repeat = entry.get("repeat")
     nested_fields = tuple(_build_field(child) for child in entry.get("fields", []) or [])
     return FieldSpec(
@@ -174,8 +225,8 @@ def _build_field(entry: dict) -> FieldSpec:
         const=const,
         const_any=const_any,
         present_if=present_if,
-        present_if_any=present_if_any,
-        enabled_if_any=enabled_if_any,
+        present_if_any=tuple(present_if_any_list),
+        enabled_if_any=tuple(enabled_if_any_list),
         repeat=repeat,
         fields=nested_fields,
     )
@@ -312,6 +363,8 @@ def _should_parse(field: FieldSpec, context: _ParseContext) -> bool:
 
 
 def _check_condition(condition: Condition, context: _ParseContext) -> bool:
+    if condition.any_of:
+        return any(_check_condition(cond, context) for cond in condition.any_of)
     if condition.mask_field:
         mask_value = context.get(condition.mask_field)
         if mask_value is None:
@@ -319,6 +372,9 @@ def _check_condition(condition: Condition, context: _ParseContext) -> bool:
         return _is_bit_set(mask_value, condition.bit or 0)
     if condition.field_present:
         return context.is_present(condition.field_present)
+    if condition.field_name is not None and condition.equals is not _EQUALS_SENTINEL:
+        value = context.get(condition.field_name)
+        return value == condition.equals
     return False
 
 
