@@ -25,48 +25,30 @@ Ejemplo rápido para convertir un archivo de tramas a SQLite:
 python queclink_tramas.py --in datos.txt --out salida.db
 ```
 
-### Filtrado por tipo de homologación
+### Detección automática de mensaje y modelo
 
-El CLI acepta la opción `--message` para limitar el procesamiento a un tipo de trama concreto:
+El CLI identifica el tipo de mensaje leyendo el `Head` (`+RESP:GTINF`, `+BUFF:GTERI`, etc.) y
+extrae el nombre corto (`INF`, `ERI`) para localizar automáticamente el archivo YAML adecuado
+(`spec/<modelo>/<mensaje>.yml`).
 
-```bash
-python queclink_tramas.py --in datos.txt --out salida.db --message GTINF
-```
-
-Admite los valores `GTINF` y `GTERI`. Esto permite homologar lotes mixtos reutilizando la misma
-especificación YAML cargada automáticamente según el modelo detectado.
-
-### Identificación del modelo
-
-El homologador determina el modelo a partir de los **primeros ocho dígitos del IMEI**,
-un valor fijo que no depende de la personalización del `DeviceName`. Los prefijos
-actualmente soportados son:
+El modelo se determina exclusivamente por los **primeros ocho dígitos del IMEI**:
 
 - `86631406` → **GV58LAU**
 - `86858906` → **GV310LAU**
 - `86252406` → **GV350CEU**
 
-Esto aplica para todos los reportes (`GTINF`, `GTERI`, etc.) ingresados a la base de datos.
+Si el prefijo no está homologado se omite la trama y se deja un log de advertencia.
 
-### Campos soportados en GTERI
+### Esquema estrictamente definido por YAML
 
-El parser de `+RESP:+/BUFF:GTERI` reconoce la totalidad de la estructura definida en los archivos
-`spec/<modelo>/gteri.yml`, incluyendo:
+Cada spec define los campos disponibles para un mensaje y modelo concretos. La base de datos
+SQLite se crea (o amplía) únicamente con esas columnas. El proceso de ingestión nunca agrega
+columnas auxiliares como `raw_line`, `is_buffer`, `send_time`, `count_number` o similares a menos
+que estén declaradas explícitamente en el YAML.
 
-- Normalización de coordenadas, máscaras y odómetro/horómetro.
-- Valores analógicos con conservación de datos crudos (`analog_in_*_raw`), milivoltios y
-  porcentajes.
-- Máscaras GNSS (`position_append_mask`) y cálculo auxiliar de `hdop` cuando solo se reportan
-  VDOP/PDOP.
-- Bloques ERI: sensores de combustible digitales, accesorios RF433 y BLE (con iteración de
-  accesorios y máscara de campos anexos).
-- Compatibilidad ampliada con los modelos **GV350CEU** y **GV58LAU**, incluyendo conteo de
-  accesorios BLE, campos reservados, máscaras extendidas y los nuevos datos de RAT/Band
-  definidos en `spec/gv350ceu/gteri.yml` y `spec/gv58lau/gteri.yml`.
-- Campos extendidos como `device_status_*`, `backup_battery_pct`, listas de advertencias de
-  validación y la ruta al archivo de especificación usado (`spec_path`).
-
-Consulta la carpeta `docs/` para detalles del protocolo y campos disponibles.
+La lógica del parser también respeta los campos opcionales controlados por máscaras (por ejemplo
+`position_append_mask.bitX` o `eri_mask.bitY`), cargando solamente los datos habilitados en la
+trama.
 
 ## Visualización de recorridos diarios
 
