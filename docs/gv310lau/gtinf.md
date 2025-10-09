@@ -118,10 +118,11 @@ Este mensaje entrega información general sobre el estado del terminal, incluyen
 
 ## 📝 Notas adicionales
 
-- Los valores `ffff` en los campos `<LAC>` y `<Cell ID>` indican que el terminal desconoce esos valores.  
-- Este mensaje **no puede enviarse vía SMS**.  
-- Si no hay celdas vecinas detectadas, los campos correspondientes estarán vacíos.  
-- Los voltajes analógicos pueden mostrar `F(0–100)` si se configuran en modo porcentaje.  
+- Los valores `ffff` en los campos `<LAC>` y `<Cell ID>` indican que el terminal desconoce esos valores.
+- Este mensaje **no puede enviarse vía SMS**.
+- Si no hay celdas vecinas detectadas, los campos correspondientes estarán vacíos.
+- Los voltajes analógicos pueden mostrar `F(0–100)` si se configuran en modo porcentaje.
+- La identificación del modelo en homologación se realiza por el prefijo del IMEI (`86858906`).
 
 ---
 

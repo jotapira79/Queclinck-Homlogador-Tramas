@@ -102,9 +102,10 @@ El mensaje **GTINF** entrega información de estado del equipo, potencia, tipo d
 
 ## 📝 Notas adicionales
 
-- Los valores `ffff` en los campos `<LAC>` y `<Cell ID>` indican que el terminal desconoce el valor.  
-- Este mensaje **no puede ser enviado por SMS**.  
-- La información de celda puede incluir datos de celdas vecinas o estar vacía si no hay celdas detectadas.  
+- La identificación del modelo en homologación se realiza por el prefijo del IMEI (`86631406`).
+- Los valores `ffff` en los campos `<LAC>` y `<Cell ID>` indican que el terminal desconoce el valor.
+- Este mensaje **no puede ser enviado por SMS**.
+- La información de celda puede incluir datos de celdas vecinas o estar vacía si no hay celdas detectadas.
 
 ---
 

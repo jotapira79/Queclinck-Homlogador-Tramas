@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 import re
 
-from ..parser import _split
+from ..parser import _split, detect_model_from_identifiers
 from ..specs.loader import get_spec_columns
 
 _GTINF_HEADERS = {"+RESP:GTINF", "+BUFF:GTINF"}
@@ -34,12 +34,23 @@ def parse_gtinf(line: str, source: str = "RESP", device: Optional[str] = None) -
         return {}
 
     # Detectar modelo desde el 4° campo si no viene por parámetro
-    device_name = (device or (parts[3].strip() if len(parts) > 3 else "")).strip()
-    if not device_name:
-        # Por defecto puedes fijar un modelo o devolver vacío
+    reported_device_name = (parts[3].strip() if len(parts) > 3 else "").strip()
+    model = (device or detect_model_from_identifiers(parts[2] if len(parts) > 2 else None, reported_device_name))
+    if not model:
+        model = reported_device_name
+    if not model:
         return {}
 
-    columns = get_spec_columns("GTINF", device_name)
+    model = model.strip().upper()
+    try:
+        columns = get_spec_columns("GTINF", model)
+    except ValueError:
+        fallback = reported_device_name.strip().upper()
+        if fallback and fallback != model:
+            columns = get_spec_columns("GTINF", fallback)
+            model = fallback
+        else:
+            raise
 
     # Reconstruir "header" y "message" de la spec a partir del primer token
     hm = _split_header_message(first)
@@ -57,6 +68,8 @@ def parse_gtinf(line: str, source: str = "RESP", device: Optional[str] = None) -
         values.append(next(iterator, None))
 
     homologated = dict(zip(columns, values))
+    if reported_device_name:
+        homologated["device_name"] = reported_device_name
 
     if len(parts) >= 2:
         homologated["count_hex"] = parts[-1]

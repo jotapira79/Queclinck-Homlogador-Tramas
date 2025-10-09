@@ -9,6 +9,33 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 HeaderDetection = Tuple[str, str, Optional[str]]
 _HEADER_RE = re.compile(r"^\+(RESP|BUFF):(GT[A-Z0-9]+)$")
 
+_IMEI_MODEL_PREFIXES: Dict[str, str] = {
+    "86631406": "GV58LAU",
+    "86858906": "GV310LAU",
+    "86252406": "GV350CEU",
+}
+
+
+def detect_model_from_identifiers(
+    imei: Optional[str], device_name: Optional[str] = None
+) -> Optional[str]:
+    """Inferir el modelo del equipo usando el prefijo del IMEI o el nombre del dispositivo."""
+
+    if imei:
+        normalized = "".join(ch for ch in imei if ch.isdigit())
+        if len(normalized) >= 8:
+            prefix = normalized[:8]
+            mapped = _IMEI_MODEL_PREFIXES.get(prefix)
+            if mapped:
+                return mapped
+
+    if device_name:
+        candidate = device_name.strip().upper()
+        if candidate:
+            return candidate
+
+    return None
+
 
 def _split(line: str) -> List[str]:
     """Separar una línea cruda en campos."""
@@ -30,13 +57,10 @@ def _detect(parts: Iterable[str]) -> Optional[HeaderDetection]:
     if not match:
         return None
     source, report = match.group(1), match.group(2)
-    device: Optional[str] = None
-    # Intentamos obtener el nombre del dispositivo del cuarto campo
-    if len(parts_list) > 3:
-        candidate = parts_list[3].strip()
-        if candidate:
-            device = candidate
-    return source, report, device
+    imei = parts_list[2].strip() if len(parts_list) > 2 else None
+    device_name = parts_list[3].strip() if len(parts_list) > 3 else None
+    model = detect_model_from_identifiers(imei, device_name)
+    return source, report, model
 
 
 def _to_iso(yyyymmddhhmmss: str) -> Optional[str]:
@@ -142,4 +166,9 @@ def _enrich_gtinf(
 
     return enriched
 
-__all__ = ["parse_line", "parse_gteri", "parse_gtinf"]
+__all__ = [
+    "parse_line",
+    "parse_gteri",
+    "parse_gtinf",
+    "detect_model_from_identifiers",
+]

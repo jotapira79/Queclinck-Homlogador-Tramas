@@ -18,3 +18,12 @@ def test_gtinf_gv58lau_basico():
         assert d["imei"] == shape["imei"]
         assert d["count_hex"] == shape["count_hex"]
         assert "send_time_iso" in d and len(d["send_time_iso"]) >= 19
+
+
+def test_gtinf_detecta_modelo_por_prefijo_imei():
+    raw = RAW[0].replace(",GV58LAU,", ",UnidadCamion,", 1)
+    d = parse_line(raw)
+    assert d["message"] == "GTINF"
+    assert d["device"] == "GV58LAU"
+    assert d.get("model") == "GV58LAU"
+    assert d.get("device_name") == "UnidadCamion"

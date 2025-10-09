@@ -86,6 +86,7 @@ Se envía periódicamente cuando la función está habilitada por el comando:
 - `Message Name` (`INF`) y `Leading Symbol` (`,`) se utilizan internamente para identificar el tipo de mensaje y separar los campos.
 - `Protocol Version` siempre debe representarse en **mayúsculas HEX**.
 - `SendTime` se normaliza a formato ISO-8601 (`send_time_iso`) tomando **el último timestamp de 14 dígitos** en la trama.
+- La identificación del modelo en homologación se realiza por el prefijo del IMEI (`86252406`).
 
 
 

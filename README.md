@@ -36,6 +36,18 @@ python queclink_tramas.py --in datos.txt --out salida.db --message GTINF
 Admite los valores `GTINF` y `GTERI`. Esto permite homologar lotes mixtos reutilizando la misma
 especificación YAML cargada automáticamente según el modelo detectado.
 
+### Identificación del modelo
+
+El homologador determina el modelo a partir de los **primeros ocho dígitos del IMEI**,
+un valor fijo que no depende de la personalización del `DeviceName`. Los prefijos
+actualmente soportados son:
+
+- `86631406` → **GV58LAU**
+- `86858906` → **GV310LAU**
+- `86252406` → **GV350CEU**
+
+Esto aplica para todos los reportes (`GTINF`, `GTERI`, etc.) ingresados a la base de datos.
+
 ### Campos soportados en GTERI
 
 El parser de `+RESP:+/BUFF:GTERI` reconoce la totalidad de la estructura definida en los archivos

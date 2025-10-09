@@ -567,7 +567,13 @@ def parse_gteri(line: str, source: str = "RESP", device: Optional[str] = None) -
         elif header.startswith("+BUFF:"):
             detected_source = "BUFF"
 
-    device_from_record = device or data.get("model") or data.get("device_name")
+    normalized_device: Optional[str] = None
+    if device:
+        normalized_device = str(device).strip().upper()
+        if normalized_device:
+            data["model"] = normalized_device
+
+    device_from_record = normalized_device or data.get("model") or data.get("device_name")
     if device_from_record:
         data["device"] = str(device_from_record).upper()
 
