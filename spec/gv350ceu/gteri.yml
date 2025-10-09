@@ -1,555 +1,164 @@
-# spec/gv350ceu/gteri.yml
-model: GV350CEU
-message: GTERI
-headers:
-  - "+RESP:GTERI"
-  - "+BUFF:GTERI"
+name: "+RESP/+BUFF:GTERI"
+device: "GV350CEU"
+message_family: "ERI"
+encoding: "ASCII"
+delimiter: ","
+terminator: "$"
+version_field: { name: full_protocol_version, length_variant: [6,7], format: hex }
 
-description: >
-  Expand Fixed Report Information (ERI). Mensaje de posición extendida que puede
-  reemplazar a GTFRI cuando ERI está habilitado. Soporta campos opcionales
-  controlados por ERI Mask y por Position Append Mask.
+schema:
+  sections:
+    - name: head
+      fields:
+        - { name: header, const_any: ["+RESP:GT", "+BUFF:GT"], type: string }
+        - { name: message, const: "ERI", type: string }
+        - { name: full_protocol_version, type: hex, length_variant: [6,7] }
+        - { name: imei, type: string, length: 15, pattern: "^[0-9]{15}$" }
+        - { name: device_name, type: string, max_length: 20 }
 
-format:
-  # Orden exacto de campos según protocolo para GV350CEU
-  - name: full_protocol_version
-    type: hex
-    len: 6
-    required: true
-    notes: "000000-FFFFFF." # :contentReference[oaicite:0]{index=0}
+    - name: body
+      fields:
+        - { name: eri_mask, type: hex, length: 8, desc: "Bitmask que habilita bloques de datos opcionales del ERI." }
 
-  - name: imei
-    type: imei
-    required: true
-    notes: "Unique ID (15 dígitos)." # :contentReference[oaicite:1]{index=1}
+        # Alimentación / tipo de reporte / contador
+        - { name: external_power_mv, type: int, min: 0, max: 32000, nullable: true, desc: "Voltaje de alimentación externa en mV." }
+        - { name: report_type, type: string, length: 2, pattern: "^[0-9A-Fa-f]{2}$", desc: "X(1-5)Y(0-6)." }
+        - { name: number, type: int, min: 1, max: 15 }
 
-  - name: device_name
-    type: string
-    max_len: 20
-    charset: "[0-9A-Za-z-_]"
-    required: true # :contentReference[oaicite:2]{index=2}
+        # GNSS básicos
+        - { name: gnss_accuracy, type: int, min: 0, max: 50 }
+        - { name: speed_kmh, type: float, min: 0.0, max: 999.9 }
+        - { name: azimuth, type: int, min: 0, max: 359 }
+        - { name: altitude_m, type: float, nullable: true }
+        - { name: lon, type: float }
+        - { name: lat, type: float }
+        - { name: gnss_utc_time, type: datetime, format: "YYYYMMDDHHMMSS" }
 
-  - name: eri_mask
-    type: hex
-    len: 8
-    required: true
-    notes: "Controla inclusión de bloques opcionales; ver 'Optional' en ERI." # :contentReference[oaicite:3]{index=3}
+        # Celda servidora
+        - { name: mcc, type: string, length: 4, pattern: "^0[0-9]{3}$" }
+        - { name: mnc, type: string, length: 4, pattern: "^0[0-9]{3}$" }
+        - { name: lac_hex, type: hex, length: 4 }
+        - { name: cell_id_hex, type: hex, length_variant: [4,8] }
 
-  - name: ext_power_mv
-    type: int
-    min: 0
-    max: 32000
-    required: false
-    notes: "Voltaje de alimentación externa (mV)." # :contentReference[oaicite:4]{index=4}
+        # Append mask y anexos (opcionales controlados por máscara de posición)
+        - { name: position_append_mask, type: hex, length: 2, desc: "Bitmask que controla anexos después de Cell ID." }
+        - { name: satellites_in_use, type: int, min: 0, max: 72, optional_by: "position_append_mask.bit0" }
+        - { name: gnss_trigger_type, type: int, min: 0, max: 4, optional_by: "position_append_mask.bit?" }
+        - { name: gnss_jamming_state, type: int, enum: [0,1,2,3], optional_by: "position_append_mask.bit4", desc: "0=Unknown,1=OK,2=Warning,3=Critical(no fix)" }
 
-  - name: report_type
-    type: string
-    pattern: "^[1-5][0-6]$"
-    required: true
-    notes: "Report ID/Type X(1-5)Y(0-6)." # :contentReference[oaicite:5]{index=5}
+        # Odómetro / horas motor
+        - { name: mileage_km, type: float, min: 0.0, max: 4294967.0 }
+        - { name: hour_meter, type: string, length: 13, pattern: "^[0-9]{7}:[0-9]{2}:[0-9]{2}$" }
 
-  - name: number
-    type: int
-    min: 1
-    max: 15
-    required: true # :contentReference[oaicite:6]{index=6}
+        # Entradas analógicas (formato mV o F(0-100))
+        - { name: analog_in_1, type: string, desc: "mV o F(0-100)" }
+        - { name: analog_in_2, type: string, desc: "mV o F(0-100)" }
+        - { name: analog_in_3, type: string, desc: "mV o F(0-30000) o F(0-100)" }
 
-  - name: gnss_acc
-    type: int
-    min: 0
-    max: 50
-    required: true
-    notes: "Precisión GNSS (0-50)." # :contentReference[oaicite:7]{index=7}
+        # Estado del equipo
+        - { name: backup_batt_percent, type: int, min: 0, max: 100 }
+        - { name: device_status, type: hex, length_variant: [6,10] }
 
-  - name: speed_kmh
-    type: float
-    min: 0.0
-    max: 999.9
-    decimals: 1
-    required: true # :contentReference[oaicite:8]{index=8}
+        # UART / sensores acoplados (opcionales controlados por ERI Mask)
+        - { name: uart_device_type, type: int, enum: [0,1,7] }
 
-  - name: azimuth_deg
-    type: int
-    min: 0
-    max: 359
-    required: true # :contentReference[oaicite:9]{index=9}
+        # Digital Fuel Sensor (opcional por ERI Mask bit0)
+        - { name: digital_fuel_sensor_raw, type: string, max_length: 20, optional_by: "eri_mask.bit0" }
 
-  - name: altitude_m
-    type: float
-    pattern: "^[-+]?[0-9]{1,5}(?:\\.[0-9])?$"
-    required: true
-    notes: "(-)xxxxx.x metros." # :contentReference[oaicite:10]{index=10}
+        # 1-Wire (opcional por ERI Mask bit1)
+        - name: onewire
+          repeated: true
+          optional_by: "eri_mask.bit1"
+          group:
+            - { name: onewire_device_count, type: int, min: 0, max: 19 }
+            - { name: onewire_device_id, type: hex, length: 16, repeats_with: "onewire_device_count" }
+            - { name: onewire_device_type, type: int, enum: [1], repeats_with: "onewire_device_count" }
+            - { name: onewire_device_data, type: hex, max_length: 40, repeats_with: "onewire_device_count", desc: "Temp en complemento a dos; luego x0.0625°C." }
 
-  - name: lon
-    type: float
-    pattern: "^[-+]?[0-9]{1,3}\\.[0-9]{1,6}$"
-    required: true
-    notes: "(-)xxx.xxxxxx." # :contentReference[oaicite:11]{index=11}
+        # CAN (opcional por ERI Mask bit2)
+        - { name: can_data, type: string, max_length: 1000, optional_by: "eri_mask.bit2" }
 
-  - name: lat
-    type: float
-    pattern: "^[-+]?[0-9]{1,2}\\.[0-9]{1,6}$"
-    required: true
-    notes: "(-)xx.xxxxxx." # :contentReference[oaicite:12]{index=12}
+        # Fuel Sensor generic (opcional por ERI Mask bit10)
+        - name: fuel_sensors
+          repeated: true
+          optional_by: "eri_mask.bit10"
+          group:
+            - { name: fuel_sensor_count, type: int, min: 0, max: 100 }
+            - { name: fuel_sensor_type, type: int, enum: [0,1,2,3,4,6,20,21,22] }
+            - { name: fuel_percentage, type: float, min: 0.0, max: 100.0, nullable: true }
+            - { name: fuel_volume_l, type: float, min: 0.0, max: 6000.0, nullable: true }
+            - { name: fuel_temperature_c, type: int, min: -40, max: 85, nullable: true }
 
-  - name: gnss_utc
-    type: datetime
-    format: "YYYYMMDDHHMMSS"
-    tz: "UTC"
-    required: true # :contentReference[oaicite:13]{index=13}
+        # RF433 (WTS100/WTH100) (opcional por ERI Mask bit?)
+        - name: rf433
+          repeated: true
+          optional_by: "eri_mask.bit?"   # según configuración
+          group:
+            - { name: rf433_count, type: int, min: 0, max: 10 }
+            - { name: rf433_serial, type: hex, length: 5, repeats_with: "rf433_count" }
+            - { name: rf433_type, type: int, enum: [1,2], repeats_with: "rf433_count" }
+            - { name: rf433_temperature_c, type: int, min: -20, max: 60, repeats_with: "rf433_count" }
+            - { name: rf433_humidity_pct, type: int, min: 0, max: 100, nullable: true, repeats_with: "rf433_count" }
 
-  - name: mcc
-    type: string
-    pattern: "^0\\d{3}$"
-    required: true
-    notes: "MCC celda servidora." # :contentReference[oaicite:14]{index=14}
+        # Bluetooth accessories (opcional por ERI Mask; con Append Mask expansible)
+        - name: ble_accessories
+          repeated: true
+          optional_by: "eri_mask.bit?"   # según configuración
+          group:
+            - { name: ble_count, type: int, min: 0, max: 10 }
+            - { name: ble_index, type: int, min: 0, max: 9, repeats_with: "ble_count" }
+            - { name: ble_type, type: int, repeats_with: "ble_count" }
+            - { name: ble_model, type: int, min: 0, max: 5, repeats_with: "ble_count" }
+            - { name: ble_raw, type: hex, max_length: 18, nullable: true, repeats_with: "ble_count" }
+            - { name: ble_append_mask, type: hex, length_variant: [4,8], repeats_with: "ble_count",
+                desc: "Bit0..15 base; Bit15=expansión activa -> habilita Bit16..31." }
+            - { name: ble_name, type: string, max_length: 20, optional_by: "ble_append_mask.bit0" }
+            - { name: ble_mac, type: hex, length: 12, optional_by: "ble_append_mask.bit1" }
+            - { name: ble_status, type: int, enum: [0,1], optional_by: "ble_append_mask.bit2" }
+            - { name: ble_batt_mv, type: int, min: 0, max: 5000, optional_by: "ble_append_mask.bit3" }
+            - { name: ble_temp_c, type: int, min: -40, max: 80, optional_by: "ble_append_mask.bit4" }
+            - { name: ble_humidity_pct, type: int, min: 0, max: 100, optional_by: "ble_append_mask.bit5" }
+            - { name: ble_io_output, type: hex, length: 2, optional_by: "ble_append_mask.bit7" }
+            - { name: ble_io_input, type: hex, length: 2, optional_by: "ble_append_mask.bit7" }
+            - { name: ble_io_analog_mv, type: int, min: 0, max: 32000, optional_by: "ble_append_mask.bit7" }
+            - { name: ble_mode, type: int, min: 0, max: 12, optional_by: "ble_append_mask.bit8" }
+            - { name: ble_event, type: int, min: 0, max: 255, optional_by: "ble_append_mask.bit8" }
+            - { name: ble_tire_pressure_kpa, type: int, min: 0, max: 500, optional_by: "ble_append_mask.bit9" }
+            - { name: ble_timestamp, type: datetime, format: "YYYYMMDDHHMMSS", optional_by: "ble_append_mask.bit10" }
+            - { name: ble_temp_enh_c, type: float, optional_by: "ble_append_mask.bit11" }
+            - { name: ble_magnet_id, type: hex, length: 2, optional_by: "ble_append_mask.bit12" }
+            - { name: ble_mag_event_counter, type: int, min: 0, max: 32767, optional_by: "ble_append_mask.bit12" }
+            - { name: ble_magnet_state, type: int, enum: [0,1], optional_by: "ble_append_mask.bit12" }
+            - { name: ble_batt_pct, type: int, min: 0, max: 100, optional_by: "ble_append_mask.bit13" }
+            - { name: ble_relay_state, type: int, enum: [0,1], optional_by: "ble_append_mask.bit14" }
+            # Expansión (Bit15=1) habilita 16..31
+            - { name: ble_triax_accel_hex, type: hex, length: 12, optional_by: "ble_append_mask.bit16" }
+            - { name: ble_angles_hex, type: hex, length: 6, optional_by: "ble_append_mask.bit17" }
+            - { name: ble_sensor_event_mask, type: hex, length: 2, optional_by: "ble_append_mask.bit18" }
+            - { name: ble_tilt_event_hex, type: hex, length: 4, optional_by: "ble_append_mask.bit18" }
+            - { name: ble_motion_event_hex, type: hex, length: 4, optional_by: "ble_append_mask.bit18" }
+            - { name: ble_crash_event_hex, type: hex, length: 4, optional_by: "ble_append_mask.bit18" }
+            - { name: ble_falling_event_hex, type: hex, length: 4, optional_by: "ble_append_mask.bit18" }
+            - { name: ble_move_event_hex, type: hex, length: 4, optional_by: "ble_append_mask.bit19" }
 
-  - name: mnc
-    type: string
-    pattern: "^0\\d{3}$"
-    required: true
-    notes: "MNC celda servidora." # :contentReference[oaicite:15]{index=15}
+        # RAT/Band (opcional por ERI Mask bit?)
+        - name: rat_band
+          optional_by: "eri_mask.bit?"
+          group:
+            - { name: rat, type: int, enum: [0,1,2,3,4], desc: "0=No service,1=EGPRS,4=LTE Cat1" }
+            - { name: band, type: string, max_length: 4, desc: "0 inválido; 1-5/7-8/20/28 banda; otros valores GSM (850/900/1800/1900)." }
 
-  - name: lac
-    type: hex
-    len: 4
-    required: true
-    notes: "LAC en hex." # :contentReference[oaicite:16]{index=16}
+    - name: tail
+      fields:
+        - { name: send_time, type: datetime, format: "YYYYMMDDHHMMSS" }
+        - { name: count_hex, type: hex, length: 4 }
 
-  - name: cell_id
-    type: hex
-    len: [4, 8]
-    required: true
-    notes: "Cell ID en hex; 4 u 8 chars." # :contentReference[oaicite:17]{index=17}
-
-  - name: pos_append_mask
-    type: hex
-    len: 2
-    required: true
-    notes: "Controla campos tras <Cell ID> (p.ej. satélites, jamming)." # :contentReference[oaicite:18]{index=18}
-
-  - name: satellites
-    type: int
-    min: 0
-    max: 72
-    required: false
-    presence: "pos_append_mask.bit0 == 1"
-    notes: "Satélites en uso; aparece si bit0 de Position Append Mask=1." # :contentReference[oaicite:19]{index=19}
-
-  - name: gnss_trigger_type
-    type: int
-    enum: [0,1,2,3,4]
-    required: false
-    notes: "Tipo de trigger GNSS (opcional)." # :contentReference[oaicite:20]{index=20}
-
-  - name: gnss_jamming_state
-    type: int
-    enum:
-      0: unknown
-      1: ok_no_significant_jamming
-      2: warning_potential_interference
-      3: critical_no_fix
-    required: false
-    presence: "pos_append_mask.bit4 == 1"
-    notes: "Estado de jamming si bit4 de Position Append Mask=1." # :contentReference[oaicite:21]{index=21}
-
-  - name: mileage_km
-    type: float
-    min: 0.0
-    max: 4294967.0
-    decimals: 1
-    required: true # :contentReference[oaicite:22]{index=22}
-
-  - name: hour_meter
-    type: string
-    pattern: "^[0-9]{1,7}:[0-5][0-9]:[0-5][0-9]$"
-    required: true
-    notes: "0000000:00:00 - 1193000:00:00." # :contentReference[oaicite:23]{index=23}
-
-  - name: analog_in_1
-    type: string
-    pattern: "^(?:F\\d{1,3}|\\d{1,5})$"
-    required: false
-    notes: "mV (0-16000) o F(0-100)." # :contentReference[oaicite:24]{index=24}
-
-  - name: analog_in_2
-    type: string
-    pattern: "^(?:F\\d{1,3}|\\d{1,5})$"
-    required: false
-    notes: "mV (0-16000) o F(0-100)." # :contentReference[oaicite:25]{index=25}
-
-  - name: analog_in_3
-    type: string
-    pattern: "^(?:F\\d{1,3}|\\d{1,5})$"
-    required: false
-    notes: "mV (0-30000) o F(0-100)." # :contentReference[oaicite:26]{index=26}
-
-  - name: backup_battery_pct
-    type: int
-    min: 0
-    max: 100
-    required: false # :contentReference[oaicite:27]{index=27}
-
-  - name: device_status
-    type: hex
-    len: [6,10]
-    required: true
-    notes: "6 u 10 hex (depende de configuración/firmware)." # :contentReference[oaicite:28]{index=28}
-
-  - name: uart_device_type
-    type: int
-    enum:
-      0: none
-      1: digital_fuel_sensor
-      7: wrt100
-    required: false # :contentReference[oaicite:29]{index=29}
-
-  - name: digital_fuel_sensor_data
-    type: string
-    required: false
-    presence: "eri_mask.bit0 == 1"
-    notes: "Dato crudo del sensor digital de combustible (si ERI Mask bit0=1)." # :contentReference[oaicite:30]{index=30}
-
-  # --- Bloque 1-Wire (opcional, repetible) ---
-  - name: onewire
-    type: group
-    required: false
-    presence: "eri_mask.bit1 == 1 or onewire.onewire_device_number > 0"
-    repeated: true
-    fields:
-      - name: onewire_device_number
-        type: int
-        min: 0
-        max: 19
-        required: true
-      - name: onewire_device_id
-        type: hex
-        len: 16
-        required: true
-      - name: onewire_device_type
-        type: int
-        enum: [1] # 1 = sensor de temperatura
-        required: true
-      - name: onewire_device_data
-        type: hex
-        max_len: 40
-        required: false
-        notes: "Temperatura en complemento a dos; *real*=dec*0.0625 °C." # :contentReference[oaicite:31]{index=31}
-    notes: "Visible si hay dispositivos; datos visibles si ERI Mask bit1=1." # :contentReference[oaicite:32]{index=32}
-
-  # --- CAN (opcional) ---
-  - name: can_data
-    type: string
-    max_len: 1000
-    required: false
-    presence: "eri_mask.bit2 == 1"
-    notes: "Datos desde dispositivo CAN si ERI Mask bit2=1." # :contentReference[oaicite:33]{index=33}
-
-  # --- Fuel Sensor Data (opcional, repetible) ---
-  - name: fuel_sensors
-    type: group
-    required: false
-    repeated: true
-    fields:
-      - name: sensor_number
-        type: int
-        min: 0
-        max: 100
-        required: true
-      - name: sensor_type
-        type: int
-        enum: [0,1,2,3,4,5,6,20,21,22]
-        required: true
-      - name: percentage
-        type: float
-        min: 0.0
-        max: 100.0
-        required: false
-      - name: volume_liters
-        type: float
-        min: 0.0
-        max: 6000.0
-        required: false
-      - name: fuel_temperature_c
-        type: int
-        min: -40
-        max: 85
-        required: false
-        presence: "eri_mask.bit10 == 1 and sensor_type in [2,6]"
-        notes: "Visible si ERI Mask bit10=1 y tipo 2 (DUT-E) o 6 (DUT-E SUM)." # :contentReference[oaicite:34]{index=34}
-    notes: "Bloque controlado por ERI; tipos soportados en doc." # :contentReference[oaicite:35]{index=35}
-
-  # --- RF433 Accessory Data (opcional, repetible) ---
-  - name: rf433
-    type: group
-    required: false
-    repeated: true
-    fields:
-      - name: accessory_number
-        type: int
-        min: 0
-        max: 10
-        required: true
-      - name: accessory_serial
-        type: string
-        pattern: "^[0-9A-F]{5}$"
-        required: true
-      - name: accessory_type
-        type: int
-        enum:
-          1: WTS100 # Temp
-          2: WTH100 # Temp+Humedad
-        required: true
-      - name: temperature_c
-        type: int
-        min: -20
-        max: 60
-        required: true
-      - name: humidity_pct
-        type: int
-        min: 0
-        max: 100
-        required: false
-    notes: "Datos de accesorios WPB/WTS/WTH." # :contentReference[oaicite:36]{index=36}
-
-  # --- Bluetooth Accessory Data (opcional, repetible) ---
-  - name: ble
-    type: group
-    required: false
-    repeated: true
-    fields:
-      - name: bt_count
-        type: int
-        min: 0
-        max: 10
-        required: true
-      - name: index
-        type: int
-        min: 0
-        max: 9
-        required: true
-      - name: accessory_type
-        type: int
-        # 0-2,6-8,10-13,15 según doc
-        required: true
-      - name: accessory_model
-        type: int
-        min: 0
-        max: 5
-        required: true
-      - name: raw_data
-        type: hex
-        max_len: 18
-        required: false
-      - name: accessory_append_mask
-        type: hex
-        len: [4,8]
-        required: false
-        notes: >
-          Bits 0-15 base; si bit15=1 se habilita expansión 16-31.
-          Ej: 0x881F0007 => (15..0)=0x881F, (31..16)=0x0007. # :contentReference[oaicite:37]{index=37}
-      - name: accessory_name
-        type: string
-        max_len: 20
-        required: false
-      - name: accessory_mac
-        type: hex
-        len: 12
-        required: false
-      - name: accessory_status
-        type: int
-        enum: [0,1]
-        required: false
-      - name: accessory_batt_mv
-        type: int
-        min: 0
-        max: 5000
-        required: false
-      - name: accessory_temp_c
-        type: int
-        min: -40
-        max: 80
-        required: false
-      - name: accessory_humidity_pct
-        type: int
-        min: 0
-        max: 100
-        required: false
-      - name: accessory_output_status
-        type: hex
-        len: 2
-        required: false
-      - name: accessory_din_status
-        type: hex
-        len: 2
-        required: false
-      - name: accessory_ain_mv
-        type: int
-        min: 0
-        max: 32000
-        required: false
-      - name: accessory_mode
-        type: int
-        min: 0
-        max: 12
-        required: false
-      - name: accessory_event
-        type: int
-        min: 0
-        max: 255
-        required: false
-      - name: tire_pressure_kpa
-        type: int
-        min: 0
-        max: 500
-        required: false
-      - name: timestamp
-        type: datetime
-        format: "YYYYMMDDHHMMSS"
-        required: false
-      - name: enhanced_temperature_c
-        type: float
-        min: -40.00
-        max: 80.00
-        required: false
-      - name: magnet_id
-        type: hex
-        len: 2
-        required: false
-      - name: mag_event_counter
-        type: int
-        min: 0
-        max: 32767
-        required: false
-      - name: magnet_state
-        type: int
-        enum: [0,1]
-        required: false
-      - name: accessory_battery_pct
-        type: int
-        min: 0
-        max: 100
-        required: false
-      - name: relay_state
-        type: int
-        enum: [0,1]
-        required: false
-      - name: tri_axis_accel_hex
-        type: hex
-        len: 12
-        required: false
-      - name: angle_values_hex
-        type: hex
-        len: 6
-        required: false
-      - name: event_mask_hex
-        type: hex
-        len: 2
-        required: false
-      - name: tilt_event_hex
-        type: hex
-        len: 4
-        required: false
-      - name: motion_event_hex
-        type: hex
-        len: 4
-        required: false
-      - name: crash_event_hex
-        type: hex
-        len: 4
-        required: false
-      - name: falling_event_hex
-        type: hex
-        len: 4
-        required: false
-      - name: move_event_hex
-        type: hex
-        len: 4
-        required: false
-    notes: "Bloque BLE con máscara expandible 0-31; ver detalle de bits y ejemplos." # :contentReference[oaicite:38]{index=38}
-
-  # --- RAT y Band (opcional) ---
-  - name: rat_band
-    type: group
-    required: false
-    fields:
-      - name: rat
-        type: int
-        enum:
-          0: no_service
-          1: egprs
-          2: reserved
-          3: reserved
-          4: lte_cat1
-        required: true
-      - name: band
-        type: string
-        notes: "0 inválido; 1-5/7-8/20/28 bandas LTE; otros=GSM (850/900/1800/1900)." # :contentReference[oaicite:39]{index=39}
-    notes: "Datos opcionales de acceso radio y banda." # :contentReference[oaicite:40]{index=40}
-
-  # --- Cola ---
-  - name: send_time
-    type: datetime
-    format: "YYYYMMDDHHMMSS"
-    required: true # :contentReference[oaicite:41]{index=41}
-
-  - name: count_number
-    type: hex
-    len: 4
-    required: true # :contentReference[oaicite:42]{index=42}
-
-  - name: tail
-    type: literal
-    value: "$"
-    required: true
-
-masks:
-  position_append_mask:
-    bits:
-      0: "Satellites in Use presente si =1"
-      4: "GNSS Jamming State presente si =1"
-    notes: "Aplica tras <Cell ID>." # :contentReference[oaicite:43]{index=43}
-
-  eri_mask:
-    notes: >
-      Controla bloques opcionales. Confirmados:
-      Bit0 -> Digital Fuel Sensor Data;
-      Bit1 -> 1-Wire Data (visibilidad de datos);
-      Bit2 -> CAN Data;
-      Bit10 -> Fuel Temperature dentro de Fuel Sensor Data (tipo 2/6). # :contentReference[oaicite:44]{index=44}
-
-  ble_accessory_append_mask:
-    base_bits:
-      0: "Accessory Name"
-      1: "Accessory MAC"
-      2: "Accessory Status"
-      3: "Accessory Battery Voltage"
-      4: "Accessory Temperature"
-      5: "Accessory Humidity"
-      7: "Accessory Input/Output Data"
-      8: "Accessory Event Notification (Mode/Event)"
-      9: "Tire pressure"
-      10: "Timestamp"
-      11: "Enhanced Temperature"
-      12: "Magnet Data (ID/Counter/State)"
-      13: "Accessory Battery Percentage"
-      14: "Relay Data (Config Result/State)"
-      15: "Expansion Mask habilita bits 16-31"
-    extended_bits:
-      16: "Tri-axial Acceleration Data"
-      17: "Angle Values"
-      18: "Sensor Event Mask (Tilt/Motion/Crash/Falling)"
-      19: "Move Event"
-      20: "Reserved"
-      21-31: "Reservado"
-    example: "0x881F0007 => (15..0)=0x881F; (31..16)=0x0007." # :contentReference[oaicite:45]{index=45}
+validation:
+  rules:
+    - { name: header_and_message, assert: "(header in ['+RESP:GT', '+BUFF:GT']) and message == 'ERI'" }
+    - { name: terminator,        assert: "line.endswith('$')" }
+    - { name: lat_lon_range,     assert: "(-90.0 <= lat <= 90.0) and (-180.0 <= lon <= 180.0)" }
 
 examples:
   - raw: "+RESP:GTERI,740904,862524060204589,GV350CEU,00000100,,10,1,1,0.0,355,97.7,117.129252,31.839388,20240415054037,0460,0000,550B,085BE2AA,01,11,3.6,,,,,0,210100,0,1,00,11,0,0000001E,100F,,D325C2B2A2F8,1,2967,0,15,0,20240415154438,405C$"
-    notes: "Ejemplo del manual ERI para GV350CEU." # :contentReference[oaicite:46]{index=46}
-
-notes:
-  - "ERI reemplaza GTFRI cuando está habilitado (+RESP:GTERI)." # :contentReference[oaicite:47]{index=47}
-  - "Los campos marcados 'Optional' dependen de ERI Mask; los de Position Append Mask dependen de sus bits." # :contentReference[oaicite:48]{index=48}
-  - "Jamming state: 0=Unknown, 1=OK, 2=Warning, 3=Critical (sin fix)." # :contentReference[oaicite:49]{index=49}
-  - "Analog In admite formato mV o F(0-100) según doc." # :contentReference[oaicite:50]{index=50}
+    parsed_keys_must_include: [imei, device_name, eri_mask, lon, lat, position_append_mask, send_time, count_hex]
