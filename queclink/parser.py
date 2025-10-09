@@ -185,7 +185,7 @@ def _build_field(entry: dict) -> FieldSpec:
 def load_spec(model: str, message: str) -> Spec:
     path = _spec_path(model, message)
     data = load_file(str(path))
-    table_name = data.get("table_name") or f"tbl_{message.lower()}_{model.lower()}"
+    table_name = data.get("table_name") or f"{message.lower()}_{model.lower()}"
     delimiter = data.get("delimiter", ",")
     terminator = data.get("terminator", "$")
     sections = data.get("schema", {}).get("sections", [])
