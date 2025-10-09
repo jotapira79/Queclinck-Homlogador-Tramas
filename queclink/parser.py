@@ -323,10 +323,24 @@ def _check_condition(condition: Condition, context: _ParseContext) -> bool:
 
 
 def _is_bit_set(value: object, bit: int) -> bool:
-    numeric = _to_int(value)
-    if numeric is None or bit < 0:
+    if bit < 0:
         return False
-    return bool(numeric & (1 << bit))
+
+    numeric = _to_int(value)
+    if numeric is not None and (numeric & (1 << bit)):
+        return True
+
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            try:
+                numeric_hex = int(text, 16)
+            except ValueError:
+                numeric_hex = None
+            else:
+                return bool(numeric_hex & (1 << bit))
+
+    return False
 
 
 def _to_int(value: object) -> Optional[int]:
