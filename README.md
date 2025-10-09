@@ -1,8 +1,8 @@
 # Queclinck-Homlogador-Tramas
 
-Herramientas para homologar y analizar tramas Queclink (`+RESP:GTERI`) de los modelos
-GV310LAU, GV58LAU y GV350CEU. Permite convertir archivos de texto/CSV/XLSX a una base de datos
-SQLite y, a partir de ella, generar mapas diarios con los recorridos diferenciando entre
+Herramientas para homologar y analizar tramas Queclink (`+RESP:GTERI` y `+RESP:GTINF`) de los
+modelos GV310LAU, GV58LAU y GV350CEU. Permite convertir archivos de texto/CSV/XLSX a una base de
+datos SQLite y, a partir de ella, generar mapas diarios con los recorridos diferenciando entre
 reportes buffer y no buffer.
 
 ## Requisitos
@@ -17,13 +17,39 @@ Instala los paquetes mínimos para los mapas con:
 pip install folium pytz python-dateutil
 ```
 
-## Parser de tramas GTERI
+## Homologación de tramas GTINF/GTERI
 
 Ejemplo rápido para convertir un archivo de tramas a SQLite:
 
 ```bash
 python queclink_tramas.py --in datos.txt --out salida.db
 ```
+
+### Filtrado por tipo de homologación
+
+El CLI acepta la opción `--message` para limitar el procesamiento a un tipo de trama concreto:
+
+```bash
+python queclink_tramas.py --in datos.txt --out salida.db --message GTINF
+```
+
+Admite los valores `GTINF` y `GTERI`. Esto permite homologar lotes mixtos reutilizando la misma
+especificación YAML cargada automáticamente según el modelo detectado.
+
+### Campos soportados en GTERI
+
+El parser de `+RESP:+/BUFF:GTERI` reconoce la totalidad de la estructura definida en los archivos
+`spec/<modelo>/gteri.yml`, incluyendo:
+
+- Normalización de coordenadas, máscaras y odómetro/horómetro.
+- Valores analógicos con conservación de datos crudos (`analog_in_*_raw`), milivoltios y
+  porcentajes.
+- Máscaras GNSS (`position_append_mask`) y cálculo auxiliar de `hdop` cuando solo se reportan
+  VDOP/PDOP.
+- Bloques ERI: sensores de combustible digitales, accesorios RF433 y BLE (con iteración de
+  accesorios y máscara de campos anexos).
+- Campos extendidos como `device_status_*`, `backup_battery_pct`, listas de advertencias de
+  validación y la ruta al archivo de especificación usado (`spec_path`).
 
 Consulta la carpeta `docs/` para detalles del protocolo y campos disponibles.
 
