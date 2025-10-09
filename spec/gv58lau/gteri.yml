@@ -254,6 +254,16 @@ schema:
               optional: true
               present_if: { mask_field: ble_append_mask, bit: 14 }
 
+        - name: rat
+          type: int
+          optional: true
+          when: { mask: eri_mask, bit: 13 }
+
+        - name: band
+          type: string
+          optional: true
+          when: { field_present: rat }
+
     - name: tail
       fields:
         - { name: send_time, type: datetime, format: "YYYYMMDDHHMMSS" }
